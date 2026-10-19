@@ -22,3 +22,6 @@ data/processed/
 .DS_Store
 Thumbs.db
 .vscode/
+
+# Contexto local de Claude Code (no se sube)
+CLAUDE.md
