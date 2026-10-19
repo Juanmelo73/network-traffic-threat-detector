@@ -1,0 +1,4 @@
+-r requirements-prod.txt
+matplotlib==3.11.2
+seaborn==0.13.2
+ipykernel==7.4.0
