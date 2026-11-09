@@ -39,3 +39,4 @@ SEVERITY_MEDIUM = 0.60
 # Muestra de demostración de la app (sample_flows.csv), tomada del conjunto de prueba.
 DEMO_SAMPLE_SIZE = 500
 DEMO_MIN_PER_ATTACK = 10
+DEMO_SAMPLE_CSV = STATIC_DIR / "sample_flows.csv"

@@ -87,6 +87,41 @@ Con UTF-8 la lectura falla, porque el archivo usa el byte `0x92` para el apóstr
 
 Durante la exploración, la prueba solo se abre para verificar que es compatible con el entrenamiento (mismas columnas, tipos y categorías) y para comparar distribuciones. **Ninguna decisión de preparación ni ningún valor aprendido (categorías conocidas, escalas, etc.) sale de la prueba**: todo se calcula con el entrenamiento.
 
+Además de la evaluación final, de la prueba sale la muestra de demostración de la app (ver la sección siguiente). Ningún modelo se entrena ni se ajusta con ella.
+
+## Muestra de demostración (`sample_flows.csv`)
+
+La app trae una muestra de 500 flujos para probarla sin descargar el dataset. Está en `src/threat_detector/app/static/sample_flows.csv`. A diferencia de los CSV de `data/raw/`, **sí se sube a git**: pesa unos 94 KB y la app la necesita para funcionar al clonar el repositorio.
+
+Se arma a partir de la partición de prueba:
+
+1. Se toman al azar 10 flujos de cada uno de los 9 tipos de ataque, para que todos aparezcan aunque sean raros.
+2. Los 410 flujos restantes se reparten entre las 10 clases de `attack_cat` en la misma proporción que en la prueba y se eligen al azar.
+3. Se barajan las filas, para que la simulación no muestre muchos flujos de la misma clase seguidos.
+
+| `attack_cat` | Flujos |
+|---|---|
+| Normal | 184 |
+| Generic | 104 |
+| Exploits | 66 |
+| Fuzzers | 40 |
+| DoS | 30 |
+| Reconnaissance | 28 |
+| Analysis | 13 |
+| Backdoor | 13 |
+| Shellcode | 12 |
+| Worms | 10 |
+
+Conserva las 45 columnas originales, incluidas `label` y `attack_cat`, así que tiene el mismo formato que un archivo que suba el usuario. Por los 90 ataques del primer paso, `Normal` queda en 37 % (en la prueba es 45 %) y los tipos raros quedan por encima de su proporción real. Es una muestra para mostrar la app, no para medir los modelos: las métricas oficiales se calculan con la prueba completa.
+
+Para generarla de nuevo, con los tres CSV en `data/raw/`, se ejecuta desde la raíz del proyecto:
+
+```bash
+uv run python -c "from threat_detector.dataset import write_demo_sample; write_demo_sample()"
+```
+
+Como usa una semilla fija, el archivo sale idéntico cada vez. Solo hace falta regenerarlo si cambia la forma de armarla o alguno de sus parámetros (`DEMO_SAMPLE_SIZE`, `DEMO_MIN_PER_ATTACK` o `RANDOM_STATE` en `src/threat_detector/config.py`).
+
 ## `data/processed/`
 
 Aquí van los datos derivados (por ejemplo, ya preprocesados) que genere el código del proyecto. Tampoco se suben a git, porque se pueden regenerar a partir de `data/raw/`.

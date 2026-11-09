@@ -2,7 +2,15 @@
 
 import pandas as pd
 
-from threat_detector.config import FEATURES_CSV, TEST_CSV, TRAIN_CSV
+from threat_detector.config import (
+    DEMO_MIN_PER_ATTACK,
+    DEMO_SAMPLE_CSV,
+    DEMO_SAMPLE_SIZE,
+    FEATURES_CSV,
+    RANDOM_STATE,
+    TEST_CSV,
+    TRAIN_CSV,
+)
 
 ID_COL = "id"
 TARGET = "label"
@@ -21,6 +29,10 @@ RAW_COLUMNS = [
     "is_ftp_login", "ct_ftp_cmd", "ct_flw_http_mthd", "ct_src_ltm", "ct_srv_dst",
     "is_sm_ips_ports", "attack_cat", "label",
 ]
+
+# Las 42 variables de entrada tal como vienen en el archivo: todas menos el identificador y las
+# etiquetas. Todavía incluye las que descarta el preprocesamiento.
+INPUT_COLS = [c for c in RAW_COLUMNS if c != ID_COL and c not in TARGET_COLS]
 
 # Filas de la partición oficial; otro número indica una descarga incompleta u otra versión.
 TRAIN_ROWS = 175_341
@@ -81,3 +93,48 @@ def load_feature_descriptions():
     descriptions.columns = descriptions.columns.str.strip().str.lower()
     descriptions["name"] = descriptions["name"].str.strip().str.lower().replace(DESCRIPTION_RENAMES)
     return descriptions
+
+
+def make_demo_sample(test_flows):
+    """Elige los flujos de la muestra de demostración a partir del conjunto de prueba, sin guardar nada.
+
+    Toma DEMO_MIN_PER_ATTACK flujos de cada tipo de ataque y completa DEMO_SAMPLE_SIZE con flujos
+    al azar, repartidos entre las clases de attack_cat en la misma proporción que en la prueba.
+    Devuelve las filas barajadas, con las 45 columnas originales; con la semilla fija sale siempre igual.
+    """
+    # 1. El mínimo de cada tipo de ataque (label = 1), para que todos aparezcan en la muestra.
+    attacks = test_flows[test_flows[TARGET] == 1]
+    minimum = attacks.groupby(ATTACK_CAT).sample(n=DEMO_MIN_PER_ATTACK, random_state=RANDOM_STATE)
+
+    # 2. Cuántos flujos más le tocan a cada clase según su proporción en la prueba. Se redondea
+    # hacia abajo y los que faltan van a las clases con la mayor parte decimal (mayor resto),
+    # para que la suma dé exactamente DEMO_SAMPLE_SIZE.
+    remaining = DEMO_SAMPLE_SIZE - len(minimum)
+    shares = test_flows[ATTACK_CAT].value_counts(normalize=True) * remaining
+    quotas = shares.astype(int)
+    leftover = remaining - quotas.sum()
+    quotas[(shares - quotas).nlargest(leftover).index] += 1
+
+    # 3. Esos flujos se eligen al azar entre los que no quedaron en el mínimo.
+    rest = test_flows.drop(minimum.index)
+    extra = [
+        rest[rest[ATTACK_CAT] == attack_cat].sample(n=quota, random_state=RANDOM_STATE)
+        for attack_cat, quota in quotas.items()
+        if quota > 0
+    ]
+
+    # 4. Se barajan: la prueba trae muchos flujos de la misma clase seguidos, y la simulación los
+    # reproduce en el orden del archivo.
+    sample = pd.concat([minimum, *extra]).sample(frac=1, random_state=RANDOM_STATE)
+    return sample[RAW_COLUMNS].reset_index(drop=True)
+
+
+def write_demo_sample():
+    """Genera sample_flows.csv, la muestra de demostración de la app, a partir del conjunto de prueba.
+
+    Se ejecuta desde la terminal con el comando que documenta data/README.md.
+    """
+    sample = make_demo_sample(load_test())
+    # Sin el índice de pandas, para que el archivo tenga las mismas 45 columnas que uno que suba el usuario.
+    sample.to_csv(DEMO_SAMPLE_CSV, index=False)
+    print(f"Muestra guardada en {DEMO_SAMPLE_CSV.name}: {len(sample)} flujos.")
