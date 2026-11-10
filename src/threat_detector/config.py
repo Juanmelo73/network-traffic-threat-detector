@@ -13,6 +13,10 @@ TEST_CSV = RAW_DIR / "UNSW_NB15_testing-set.csv"
 # "NUSW" no es un error: es el nombre que usa la fuente oficial.
 FEATURES_CSV = RAW_DIR / "NUSW-NB15_features.csv"
 
+# Filas de la partición oficial; otro número indica una descarga incompleta u otra versión.
+TRAIN_ROWS = 175_341
+TEST_ROWS = 82_332
+
 ARTIFACTS_DIR = ROOT / "artifacts"
 MODELS_DIR = ARTIFACTS_DIR / "models"
 FIGURES_DIR = ARTIFACTS_DIR / "figures"
@@ -26,6 +30,9 @@ VALIDATION_SIZE = 0.20
 
 # Las categorías con menos flujos que este mínimo en entrenamiento se agrupan en OTHER_CATEGORY.
 MIN_CATEGORY_COUNT = 1000
+# El mismo mínimo como proporción del archivo de entrenamiento completo (≈ 0,57 %). Así, al ajustar
+# con solo una parte del entrenamiento, se conservan las mismas categorías que decidió el EDA.
+MIN_CATEGORY_FRACTION = MIN_CATEGORY_COUNT / TRAIN_ROWS
 OTHER_CATEGORY = "other"
 
 # El umbral de alerta debe dejar por encima al menos esta parte de los ataques de validación.

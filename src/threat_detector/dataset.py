@@ -9,7 +9,9 @@ from threat_detector.config import (
     FEATURES_CSV,
     RANDOM_STATE,
     TEST_CSV,
+    TEST_ROWS,
     TRAIN_CSV,
+    TRAIN_ROWS,
 )
 
 ID_COL = "id"
@@ -33,10 +35,6 @@ RAW_COLUMNS = [
 # Las 42 variables de entrada tal como vienen en el archivo: todas menos el identificador y las
 # etiquetas. Todavía incluye las que descarta el preprocesamiento.
 INPUT_COLS = [c for c in RAW_COLUMNS if c != ID_COL and c not in TARGET_COLS]
-
-# Filas de la partición oficial; otro número indica una descarga incompleta u otra versión.
-TRAIN_ROWS = 175_341
-TEST_ROWS = 82_332
 
 # Nombre en NUSW-NB15_features.csv (en minúsculas) -> nombre en las particiones.
 DESCRIPTION_RENAMES = {
