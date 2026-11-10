@@ -1,5 +1,6 @@
 """Definición de las columnas de UNSW-NB15 y carga de sus archivos CSV."""
 
+import numpy as np
 import pandas as pd
 
 from threat_detector.config import (
@@ -7,6 +8,7 @@ from threat_detector.config import (
     DEMO_SAMPLE_CSV,
     DEMO_SAMPLE_SIZE,
     FEATURES_CSV,
+    MAX_ERROR_ROWS,
     RANDOM_STATE,
     TEST_CSV,
     TEST_ROWS,
@@ -67,6 +69,40 @@ def load_flows(path, expected_rows):
             "La descarga puede estar incompleta o ser otra versión del dataset."
         )
     return flows
+
+
+def validate_flows(flows, numeric_cols, categorical_cols):
+    """Comprueba que los flujos se pueden preparar; si no, lanza ValueError con un mensaje en español.
+
+    Revisa, en este orden: que haya al menos un flujo, que estén todas las columnas que usa el
+    modelo, que las numéricas no tengan valores vacíos o que no son números, y que no sean
+    negativas. Las filas se numeran como líneas del archivo (encabezado = línea 1), suponiendo
+    que los flujos están en el orden del archivo.
+    """
+    if len(flows) == 0:
+        raise ValueError("El archivo no tiene flujos para analizar.")
+
+    missing = [c for c in [*numeric_cols, *categorical_cols] if c not in flows.columns]
+    if missing:
+        raise ValueError(f"Al archivo le faltan columnas obligatorias: {', '.join(missing)}.")
+
+    # Tabla nueva: los flujos recibidos no se modifican. Lo que no es un número queda vacío, y
+    # los infinitos también cuentan como "no numéricos", porque no son una medida posible.
+    numbers = flows[numeric_cols].apply(pd.to_numeric, errors="coerce")
+    problems = (
+        ("vacíos o no numéricos", ~np.isfinite(numbers)),
+        ("negativos", numbers < 0),
+    )
+    for reason, mask in problems:
+        bad_rows = mask.any(axis=1).to_numpy()
+        if bad_rows.any():
+            columns = mask.columns[mask.any()]
+            # Se cuenta por posición, no por el índice de pandas: posición + 2 = línea del archivo.
+            lines = np.flatnonzero(bad_rows)[:MAX_ERROR_ROWS] + 2
+            raise ValueError(
+                f"Hay {bad_rows.sum()} flujo(s) con valores {reason} en las columnas "
+                f"{', '.join(columns)}. Primeras filas afectadas: {', '.join(map(str, lines))}."
+            )
 
 
 def load_train():

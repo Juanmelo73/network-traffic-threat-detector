@@ -831,6 +831,7 @@ Describe un modelo entrenado. Lo escribe `ml/` al exportar el modelo y lo lee la
 
 | Campo | Tipo | Puede ser `null` | Qué es |
 |---|---|---|---|
+| `preprocessing_method` | texto | Solo en el simulado | Método de preprocesamiento con el que se entrenó el modelo: `"m1"`, `"m2"` o `"m3"`, una de las claves de `PREPROCESSING_METHODS` en `ml/preprocessing.py`. Es informativo: la app no lo usa, porque la preparación ya está dentro del `Pipeline`. `null` en el modelo simulado, que no se preprocesa. |
 | `use_ttl` | booleano | No | Si el modelo usa las variables de TTL (`sttl`, `dttl`, `ct_state_ttl`). |
 | `numeric_cols` | lista de textos | No | Variables numéricas que recibe el modelo, con su nombre técnico. Son las que la app exige y valida en el archivo (secciones 4 y 9). |
 | `categorical_cols` | lista de textos | No | Variables categóricas que recibe el modelo: siempre `CATEGORICAL_COLS` (`proto`, `service`, `state`). Se exigen, pero una categoría desconocida o vacía nunca causa rechazo. |
@@ -838,6 +839,8 @@ Describe un modelo entrenado. Lo escribe `ml/` al exportar el modelo y lo lee la
 | `feature_groups` | objeto | No | Para cada variable original, las columnas que salen de la preparación del `Pipeline` (los nombres de `get_feature_names_out`). Una variable numérica tiene una sola columna; una categórica, una por categoría más la columna "infrecuente". La app lo usa para sumar las contribuciones por variable (sección 5). |
 
 Los nombres de `numeric_cols`, `categorical_cols`, `log_cols` y `use_ttl` son los mismos de `fit_preparation` en el análisis exploratorio.
+
+`use_ttl` y `preprocessing_method` deben coincidir: `"m3"` va con `use_ttl: false`; `"m1"` y `"m2"`, con `use_ttl: true`.
 
 ### Umbral
 
@@ -903,6 +906,7 @@ Valores inventados, pero con las listas de variables reales que salen de las dec
   "trained_at": "2026-11-20T15:42:10Z",
   "sklearn_version": "1.7.2",
   "detector_type": "binary",
+  "preprocessing_method": "m1",
   "use_ttl": true,
   "numeric_cols": ["dur", "spkts", "dpkts", "sbytes", "dbytes", "rate", "sttl", "dttl", "sload", "dload", "sloss", "dloss", "sinpkt", "dinpkt", "sjit", "djit", "synack", "ackdat", "smean", "dmean", "trans_depth", "response_body_len", "ct_srv_src", "ct_state_ttl", "ct_dst_ltm", "ct_src_dport_ltm", "ct_dst_sport_ltm", "ct_dst_src_ltm", "ct_ftp_cmd", "ct_flw_http_mthd", "ct_src_ltm", "ct_srv_dst"],
   "categorical_cols": ["proto", "service", "state"],
@@ -1075,7 +1079,7 @@ Tiene todos los campos de la sección 11, con estas particularidades:
 | `name` | `"mock"` |
 | `display_name` | `"Modelo simulado"` |
 | `is_mock` | `true` |
-| `trained_at`, `sklearn_version`, `threshold_rule`, `complexity` | `null`, porque no se entrena. |
+| `trained_at`, `sklearn_version`, `preprocessing_method`, `threshold_rule`, `complexity` | `null`, porque no se entrena. |
 | `detector_type` | `"binary"` |
 | `use_ttl` | `true` |
 | `numeric_cols`, `categorical_cols`, `log_cols`, `feature_groups` | Los mismos de un modelo real con TTL (ejemplo de la sección 11). Así la app valida los archivos exactamente igual que con un modelo real. |

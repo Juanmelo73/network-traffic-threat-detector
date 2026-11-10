@@ -47,3 +47,6 @@ SEVERITY_MEDIUM = 0.60
 DEMO_SAMPLE_SIZE = 500
 DEMO_MIN_PER_ATTACK = 10
 DEMO_SAMPLE_CSV = STATIC_DIR / "sample_flows.csv"
+
+# Máximo de filas con problemas que se listan en un error de validación (contrato, sección 9).
+MAX_ERROR_ROWS = 5
