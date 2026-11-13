@@ -21,6 +21,13 @@ TARGET = "label"
 ATTACK_CAT = "attack_cat"
 TARGET_COLS = [TARGET, ATTACK_CAT]
 
+# Valores de attack_cat: el tráfico normal y los 9 tipos de ataque, en el orden del contrato (sección 2).
+NORMAL_CAT = "Normal"
+ATTACK_TYPES = [
+    "Generic", "Exploits", "Fuzzers", "DoS", "Reconnaissance",
+    "Analysis", "Backdoor", "Shellcode", "Worms",
+]
+
 CATEGORICAL_COLS = ["proto", "service", "state"]
 
 # Las 45 columnas de las particiones, en el orden en que vienen en los archivos.

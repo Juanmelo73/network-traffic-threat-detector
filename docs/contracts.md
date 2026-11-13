@@ -470,6 +470,8 @@ Comparan `is_alert` con `label` en todos los flujos de prueba, con el umbral del
 | `accuracy` | número de 0 a 1 | Parte de los flujos clasificados bien. **Solo de referencia**, para comparar con artículos que la reportan: no se usa para decidir ni se muestra como métrica principal. |
 | `confusion` | objeto | Conteos `tp`, `fp`, `tn` y `fn`, para mostrar números absolutos. |
 
+`precision` es `null` si no hay ninguna alerta, porque sin alertas no hay sobre qué calcularla; en ese caso `f1` es 0. Estas métricas se calculan solo con datos que traen flujos normales y ataques reales (validación y prueba). Con una sola clase, `ml/` lanza un error.
+
 ### Métricas del tipo de ataque (`attack_type`)
 
 Se miden **solo sobre los ataques reales que dieron alerta**, porque el tipo probable solo existe en las alertas (sección 3). Se compara `predicted_attack_cat` con `attack_cat` entre los 9 tipos de ataque, sin `"Normal"`.
@@ -481,7 +483,7 @@ Se miden **solo sobre los ataques reales que dieron alerta**, porque el tipo pro
 | `per_class` | lista | Una entrada por cada uno de los 9 tipos: `attack_cat`, `precision`, `recall`, `f1` y `support` (flujos reales de ese tipo evaluados). Siempre trae los 9, en el orden de la sección 2. |
 | `confusion` | objeto | Matriz de confusión entre los 9 tipos: `labels` (los 9 tipos, en orden) y `matrix` (9 filas de 9 enteros). La fila es el tipo real y la columna el tipo predicho. |
 
-En `per_class`, `precision`, `recall` y `f1` son `null` cuando no se pueden calcular: por ejemplo, la precisión de un tipo que el modelo nunca predijo.
+En `per_class`, una métrica es `null` cuando no se puede calcular: `precision` si el tipo nunca se predijo, `recall` si no tiene flujos reales (`support` = 0) y `f1` si el tipo no aparece ni en lo real ni en lo predicho. Si un tipo tiene flujos pero nunca se predijo, su `f1` es 0. `macro_f1` promedia solo los `f1` que se pueden calcular, así que un tipo ausente no cuenta como 0. Si no hay ningún flujo evaluado, `macro_f1` es `null`.
 
 ### Ejemplo de respuesta
 
@@ -687,7 +689,7 @@ En `WS /ws/simulate`, el mismo objeto `error` llega dentro de un mensaje `{"type
 | `invalid_values` | 400 | Alguna variable numérica está vacía, no es un número o es negativa. | "Hay {total} flujo(s) con valores {vacíos o no numéricos / negativos} en las columnas {columnas}. Primeras filas afectadas: {filas}." | `reason`, `columns`, `rows`, `total_rows` |
 | `invalid_labels` | 400 | Con etiquetas: `label` no es 0 o 1, o `attack_cat` no es uno de los 10 valores de la sección 2 (o alguna está vacía). | "Hay {total} flujo(s) con etiquetas no válidas en la columna {columna}. Primeras filas afectadas: {filas}." | `column`, `rows`, `total_rows` |
 
-En `invalid_values`, `reason` vale `"empty_or_not_numeric"` o `"negative"`, como las dos revisiones de `validate_flows` en el análisis exploratorio.
+En `invalid_values`, `reason` vale `"empty_or_not_numeric"` o `"negative"`, que son las dos revisiones de valores de `validate_flows` en `dataset.py`. Los infinitos cuentan como `"empty_or_not_numeric"`.
 
 ### Errores de `GET /api/analysis/{analysis_id}`, `GET /api/explain/{id}` y `WS /ws/simulate`
 
@@ -771,8 +773,8 @@ Si la detección y el tipo salen de un solo modelo multiclase, las dos claves ap
 
 - **Llevan la preparación adentro.** Cada `Pipeline` recibe los flujos con sus columnas originales, tal como vienen en el archivo, y hace por dentro toda la preparación aprobada en el análisis exploratorio. Así la preparación del entrenamiento y la de la app son siempre la misma:
   - `log1p` a las variables asimétricas, con `FunctionTransformer(np.log1p)`.
-  - Agrupación en `other` y one-hot de `CATEGORICAL_COLS`, con `OneHotEncoder(min_frequency=MIN_CATEGORY_COUNT, handle_unknown="infrequent_if_exist")`: las categorías raras y las nuevas van a la misma columna "infrecuente".
-  - Escalado, si el modelo lo necesita.
+  - Agrupación y one-hot de `CATEGORICAL_COLS`, con `OneHotEncoder(min_frequency=MIN_CATEGORY_FRACTION, handle_unknown="infrequent_if_exist", sparse_output=False)`. `MIN_CATEGORY_FRACTION` es `MIN_CATEGORY_COUNT / TRAIN_ROWS` (≈ 0,57 %): el mismo mínimo del análisis exploratorio, expresado como proporción. Así, al ajustar con la parte de entrenamiento, se conservan las mismas 18 categorías. Las categorías raras, las nuevas y las celdas vacías van a la misma columna "infrecuente" (`<variable>_infrequent_sklearn`).
+  - Escalado según el método de preprocesamiento (`preprocessing_method`, sección 11): `StandardScaler` sobre las numéricas en M2 y M3, después de `log1p`; las columnas one-hot no se escalan.
   - Las columnas eliminadas en el análisis exploratorio no se usan.
 - **Solo piezas de scikit-learn.** Para cargar `model.joblib` basta con scikit-learn y joblib; nunca hace falta importar código de `threat_detector`. Si no fuera así, la app dependería de `ml/`.
 - **Otras librerías.** Un modelo puede usar otra librería que siga la interfaz de scikit-learn (`fit`, `predict_proba`, `classes_`). En ese caso, esa librería **debe estar en `requirements-prod.txt`**, porque la app la necesita para cargar el modelo.
@@ -780,7 +782,7 @@ Si la detección y el tipo salen de un solo modelo multiclase, las dos claves ap
 
 ### Cómo usa la app el modelo
 
-1. **Valida el archivo** con las columnas que pide `model.json` (secciones 4 y 9). El `Pipeline` solo recibe flujos válidos.
+1. **Valida el archivo** con las columnas que pide `model.json` (secciones 4 y 9). El `Pipeline` solo recibe flujos válidos. La validación la hace `validate_flows` de `dataset.py`, porque el `Pipeline` no valida.
 2. **Calcula `attack_probability` con el detector.** Lo hace según el tipo de detector que declara `model.json` (sección 11); nunca lo deduce:
 
    | Tipo de detector | `attack_probability` |
@@ -788,7 +790,7 @@ Si la detección y el tipo salen de un solo modelo multiclase, las dos claves ap
    | Binario (clases 0 y 1) | La probabilidad de la clase `1`. |
    | Multiclase (los 10 valores de `attack_cat`) | 1 − la probabilidad de la clase `"Normal"`. |
 
-3. **Aplica el umbral y la severidad** con `threshold` de `model.json` y los cortes de `config.py` (sección 3).
+3. **Aplica el umbral y la severidad** con `threshold` de `model.json` y los cortes de `config.py` (sección 3), con `is_alert` y `severity` de `artifacts.py`, que `ml/` también usa.
 4. **Calcula `predicted_attack_cat`**, solo para las alertas: el tipo con mayor probabilidad del clasificador entre los 9 tipos de ataque, sin contar `"Normal"` aunque esté entre sus clases (sección 3).
 
 **Las clases se ubican por su nombre, nunca por su posición.** La app busca la columna de `1`, de `"Normal"` o de cada tipo de ataque en `classes_`. Así no importa en qué orden las haya guardado scikit-learn.
