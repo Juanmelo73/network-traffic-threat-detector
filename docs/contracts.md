@@ -137,7 +137,7 @@ Es el resultado de analizar un flujo. Tiene **el mismo formato** en la lista de 
 
 Los campos de valores reales usan los nombres de las columnas de `dataset.py` (`TARGET` = `label`, `ATTACK_CAT` = `attack_cat`) con el prefijo `true_`, para no confundirlos con lo que predice el modelo.
 
-`proto`, `service` y `state` (`CATEGORICAL_COLS` en `dataset.py`) identifican la conexión en la cola de alertas, la simulación y el panel lateral. Se envían **antes** de agrupar las categorías raras en `other`: el analista ve el protocolo real (por ejemplo, `"gre"`), aunque el modelo lo haya tratado como `other`.
+`proto`, `service` y `state` (`CATEGORICAL_COLS` en `dataset.py`) identifican la conexión en la cola de alertas, la simulación y el panel lateral. Se envían **antes** de agrupar las categorías raras: el analista ve el protocolo real (por ejemplo, `"gre"`), aunque el modelo lo haya tratado como infrecuente (columna `proto_infrequent_sklearn`, sección 10).
 
 ### Regla del tipo probable
 
@@ -215,7 +215,7 @@ Un formulario `multipart/form-data` con:
 - **Columnas obligatorias:** `id`, `proto`, `service`, `state` y las variables numéricas que usa el modelo elegido (su lista está en `model.json`, sección 11). Las demás columnas se ignoran, así que un archivo con todas las columnas de `RAW_COLUMNS` siempre sirve.
 - **`id`:** entero y sin repetirse dentro del archivo, porque identifica cada flujo (sección 2).
 - **Variables numéricas:** no pueden estar vacías, ni tener texto ni valores negativos. Un flujo así no se corrige: el archivo se rechaza con un mensaje que dice qué columnas y qué filas fallan.
-- **Categóricas:** una categoría desconocida o vacía nunca causa rechazo; el modelo la trata como `other`.
+- **Categóricas:** una categoría desconocida o vacía nunca causa rechazo; el modelo la trata como infrecuente, en la columna `<variable>_infrequent_sklearn` (sección 10).
 - **Etiquetas:** el archivo **trae etiquetas** si tiene las dos columnas, `label` y `attack_cat`, y `use_labels` es `true`. `label` solo puede valer 0 o 1, y `attack_cat` uno de los 10 valores de la sección 2.
 - **Una sola etiqueta:** si `use_labels` es `true` y el archivo tiene solo una de las dos columnas, se rechaza con un mensaje que dice cuál falta. Con `use_labels` = `false` no se rechaza, porque las dos columnas se ignoran.
 
@@ -332,7 +332,7 @@ Cada entrada de `contributions`:
 
 ### Reglas
 
-- **Una entrada por variable original:** las columnas one-hot de `proto`, `service` y `state` se **suman** y aparecen como una sola entrada con el nombre de la variable. El analista ve `proto`, no `proto_tcp` ni `proto_other`.
+- **Una entrada por variable original:** las columnas one-hot de `proto`, `service` y `state` se **suman** y aparecen como una sola entrada con el nombre de la variable. El analista ve `proto`, no `proto_tcp` ni `proto_infrequent_sklearn`.
 - **Solo las variables que usa el modelo:** un modelo sin TTL no devuelve `sttl`, `dttl` ni `ct_state_ttl`. Las columnas eliminadas en la preparación (por ejemplo, `swin`) nunca aparecen.
 - **Orden:** de mayor a menor efecto, es decir, por el valor absoluto de `contribution`. El frontend decide cuántas mostrar.
 - **Cómo se leen los números:** el signo y el tamaño relativo entre variables de un mismo flujo. La escala depende del método de explicación de cada modelo, así que no se comparan contribuciones entre modelos distintos.
@@ -901,7 +901,7 @@ Campos de `complexity`:
 
 ### Ejemplo
 
-Valores inventados, pero con las listas de variables reales que salen de las decisiones del análisis exploratorio (32 numéricas, 21 con `log1p` y 53 columnas finales). La versión de scikit-learn y los valores de `complexity` son provisionales:
+Valores inventados, pero con las listas de variables reales que salen de las decisiones del análisis exploratorio (32 numéricas, 21 con `log1p` y 53 columnas finales) y la versión de scikit-learn del proyecto. Los valores de `complexity` son provisionales:
 
 ```json
 {
@@ -909,7 +909,7 @@ Valores inventados, pero con las listas de variables reales que salen de las dec
   "display_name": "Modelo de ejemplo",
   "is_mock": false,
   "trained_at": "2026-11-20T15:42:10Z",
-  "sklearn_version": "1.7.2",
+  "sklearn_version": "1.9.1",
   "detector_type": "binary",
   "preprocessing_method": "m1",
   "use_ttl": true,

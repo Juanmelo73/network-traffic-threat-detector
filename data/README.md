@@ -4,7 +4,7 @@ El proyecto usa el dataset **UNSW-NB15**, con su partición oficial de entrenami
 
 ## Por qué los datos no están en el repositorio
 
-Los CSV **no se suben a git**. Las carpetas `data/raw/` y `data/processed/` están en el `.gitignore` por estas razones:
+Los CSV **no se suben a git**. La carpeta `data/raw/` está en el `.gitignore` por estas razones:
 
 - **Tamaño:** los archivos pesan cerca de 47 MB en total. Git no está hecho para guardar archivos grandes, y cada versión quedaría para siempre en el historial.
 - **Licencia:** el dataset es de sus autores y se distribuye para uso académico desde su fuente oficial. La licencia MIT del repositorio cubre el código, no los datos.
@@ -26,6 +26,8 @@ data/raw/
 > **Nota sobre el nombre:** el archivo de variables se llama `NUSW-NB15_features.csv`, con "NUSW" en lugar de "UNSW". Así lo publica la fuente oficial. Se deja con ese nombre para que nadie tenga que renombrarlo.
 
 Desde WSL, una forma sencilla de copiarlos es abrir la carpeta en el Explorador de Windows con `explorer.exe data/raw` y arrastrar los archivos ahí.
+
+El proyecto no guarda datos derivados en disco: la separación de entrenamiento y validación y el preprocesamiento se calculan al cargar los datos, siempre igual gracias a la semilla fija.
 
 ## Contenido de cada archivo
 
@@ -121,10 +123,6 @@ uv run python -c "from threat_detector.dataset import write_demo_sample; write_d
 ```
 
 Como usa una semilla fija, el archivo sale idéntico cada vez. Solo hace falta regenerarlo si cambia la forma de armarla o alguno de sus parámetros (`DEMO_SAMPLE_SIZE`, `DEMO_MIN_PER_ATTACK` o `RANDOM_STATE` en `src/threat_detector/config.py`).
-
-## `data/processed/`
-
-Aquí van los datos derivados (por ejemplo, ya preprocesados) que genere el código del proyecto. Tampoco se suben a git, porque se pueden regenerar a partir de `data/raw/`.
 
 ## Cita
 

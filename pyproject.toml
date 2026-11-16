@@ -1,10 +1,14 @@
 [project]
 name = "threat-detector"
 version = "0.1.0"
-description = "Add your description here"
+description = "Network intrusion detection system with machine learning on UNSW-NB15 flows, with a web interface."
 readme = "README.md"
 authors = [
-    { name = "juan.melo", email = "juan.melo@uao.edu.co" }
+    { name = "Juan José Melo", email = "juan.melo@uao.edu.co" },
+    { name = "Juana López" },
+    { name = "Wilson Navia" },
+    { name = "Jaiber Obando" },
+    { name = "Eduardo Sarmiento" },
 ]
 requires-python = ">=3.13"
 dependencies = [
@@ -16,9 +20,6 @@ dependencies = [
     "scikit-learn==1.9.1",
     "seaborn==0.13.2",
 ]
-
-[project.scripts]
-threat-detector = "threat_detector:main"
 
 [build-system]
 requires = ["uv_build>=0.13.0,<0.14.0"]

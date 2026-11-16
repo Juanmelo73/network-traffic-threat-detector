@@ -6,7 +6,6 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 
 RAW_DIR = ROOT / "data" / "raw"
-PROCESSED_DIR = ROOT / "data" / "processed"
 
 TRAIN_CSV = RAW_DIR / "UNSW_NB15_training-set.csv"
 TEST_CSV = RAW_DIR / "UNSW_NB15_testing-set.csv"
@@ -34,12 +33,12 @@ STATIC_DIR = ROOT / "src" / "threat_detector" / "app" / "static"
 RANDOM_STATE = 42
 VALIDATION_SIZE = 0.20
 
-# Las categorías con menos flujos que este mínimo en entrenamiento se agrupan en OTHER_CATEGORY.
+# Las categorías con menos flujos que este mínimo en entrenamiento se agrupan en una columna
+# infrecuente por variable.
 MIN_CATEGORY_COUNT = 1000
 # El mismo mínimo como proporción del archivo de entrenamiento completo (≈ 0,57 %). Así, al ajustar
 # con solo una parte del entrenamiento, se conservan las mismas categorías que decidió el EDA.
 MIN_CATEGORY_FRACTION = MIN_CATEGORY_COUNT / TRAIN_ROWS
-OTHER_CATEGORY = "other"
 
 # El umbral de alerta debe dejar por encima al menos esta parte de los ataques de validación.
 TARGET_RECALL = 0.95
