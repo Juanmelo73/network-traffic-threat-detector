@@ -1,0 +1,403 @@
+{
+  "name": "mock",
+  "display_name": "Modelo simulado",
+  "is_mock": true,
+  "trained_at": null,
+  "sklearn_version": null,
+  "detector_type": "binary",
+  "preprocessing_method": null,
+  "use_ttl": true,
+  "numeric_cols": [
+    "dur",
+    "spkts",
+    "dpkts",
+    "sbytes",
+    "dbytes",
+    "rate",
+    "sttl",
+    "dttl",
+    "sload",
+    "dload",
+    "sloss",
+    "dloss",
+    "sinpkt",
+    "dinpkt",
+    "sjit",
+    "djit",
+    "synack",
+    "ackdat",
+    "smean",
+    "dmean",
+    "trans_depth",
+    "response_body_len",
+    "ct_srv_src",
+    "ct_state_ttl",
+    "ct_dst_ltm",
+    "ct_src_dport_ltm",
+    "ct_dst_sport_ltm",
+    "ct_dst_src_ltm",
+    "ct_ftp_cmd",
+    "ct_flw_http_mthd",
+    "ct_src_ltm",
+    "ct_srv_dst"
+  ],
+  "categorical_cols": [
+    "proto",
+    "service",
+    "state"
+  ],
+  "log_cols": [
+    "dur",
+    "spkts",
+    "dpkts",
+    "sbytes",
+    "dbytes",
+    "rate",
+    "sload",
+    "dload",
+    "sloss",
+    "dloss",
+    "sinpkt",
+    "dinpkt",
+    "sjit",
+    "djit",
+    "dmean",
+    "response_body_len",
+    "ct_srv_src",
+    "ct_dst_ltm",
+    "ct_dst_src_ltm",
+    "ct_src_ltm",
+    "ct_srv_dst"
+  ],
+  "feature_groups": {
+    "dur": [
+      "dur"
+    ],
+    "spkts": [
+      "spkts"
+    ],
+    "dpkts": [
+      "dpkts"
+    ],
+    "sbytes": [
+      "sbytes"
+    ],
+    "dbytes": [
+      "dbytes"
+    ],
+    "rate": [
+      "rate"
+    ],
+    "sttl": [
+      "sttl"
+    ],
+    "dttl": [
+      "dttl"
+    ],
+    "sload": [
+      "sload"
+    ],
+    "dload": [
+      "dload"
+    ],
+    "sloss": [
+      "sloss"
+    ],
+    "dloss": [
+      "dloss"
+    ],
+    "sinpkt": [
+      "sinpkt"
+    ],
+    "dinpkt": [
+      "dinpkt"
+    ],
+    "sjit": [
+      "sjit"
+    ],
+    "djit": [
+      "djit"
+    ],
+    "synack": [
+      "synack"
+    ],
+    "ackdat": [
+      "ackdat"
+    ],
+    "smean": [
+      "smean"
+    ],
+    "dmean": [
+      "dmean"
+    ],
+    "trans_depth": [
+      "trans_depth"
+    ],
+    "response_body_len": [
+      "response_body_len"
+    ],
+    "ct_srv_src": [
+      "ct_srv_src"
+    ],
+    "ct_state_ttl": [
+      "ct_state_ttl"
+    ],
+    "ct_dst_ltm": [
+      "ct_dst_ltm"
+    ],
+    "ct_src_dport_ltm": [
+      "ct_src_dport_ltm"
+    ],
+    "ct_dst_sport_ltm": [
+      "ct_dst_sport_ltm"
+    ],
+    "ct_dst_src_ltm": [
+      "ct_dst_src_ltm"
+    ],
+    "ct_ftp_cmd": [
+      "ct_ftp_cmd"
+    ],
+    "ct_flw_http_mthd": [
+      "ct_flw_http_mthd"
+    ],
+    "ct_src_ltm": [
+      "ct_src_ltm"
+    ],
+    "ct_srv_dst": [
+      "ct_srv_dst"
+    ],
+    "proto": [
+      "proto_arp",
+      "proto_ospf",
+      "proto_sctp",
+      "proto_tcp",
+      "proto_udp",
+      "proto_unas",
+      "proto_infrequent_sklearn"
+    ],
+    "service": [
+      "service_-",
+      "service_dns",
+      "service_ftp",
+      "service_ftp-data",
+      "service_http",
+      "service_pop3",
+      "service_smtp",
+      "service_ssh",
+      "service_infrequent_sklearn"
+    ],
+    "state": [
+      "state_CON",
+      "state_FIN",
+      "state_INT",
+      "state_REQ",
+      "state_infrequent_sklearn"
+    ]
+  },
+  "threshold": 0.31,
+  "threshold_rule": null,
+  "can_explain": true,
+  "explanation_method": "mock",
+  "test_metrics": {
+    "test_flows": 82332,
+    "detection": {
+      "detection_rate": 0.9483,
+      "false_alarm_rate": 0.1452,
+      "precision": 0.8889,
+      "f1": 0.9176,
+      "pr_auc": 0.9611,
+      "roc_auc": 0.9705,
+      "accuracy": 0.9063,
+      "confusion": {
+        "tp": 42987,
+        "fp": 5372,
+        "tn": 31628,
+        "fn": 2345
+      }
+    },
+    "attack_type": {
+      "evaluated_flows": 42987,
+      "macro_f1": 0.8526,
+      "per_class": [
+        {
+          "attack_cat": "Generic",
+          "precision": 0.9999,
+          "recall": 0.99,
+          "f1": 0.9949,
+          "support": 18850
+        },
+        {
+          "attack_cat": "Exploits",
+          "precision": 0.804,
+          "recall": 0.87,
+          "f1": 0.8357,
+          "support": 10575
+        },
+        {
+          "attack_cat": "Fuzzers",
+          "precision": 0.9177,
+          "recall": 0.9099,
+          "f1": 0.9138,
+          "support": 4850
+        },
+        {
+          "attack_cat": "DoS",
+          "precision": 0.719,
+          "recall": 0.6102,
+          "f1": 0.6601,
+          "support": 3925
+        },
+        {
+          "attack_cat": "Reconnaissance",
+          "precision": 0.892,
+          "recall": 0.9099,
+          "f1": 0.9009,
+          "support": 3251
+        },
+        {
+          "attack_cat": "Analysis",
+          "precision": 0.8226,
+          "recall": 0.7997,
+          "f1": 0.811,
+          "support": 609
+        },
+        {
+          "attack_cat": "Backdoor",
+          "precision": 0.7914,
+          "recall": 0.7288,
+          "f1": 0.7588,
+          "support": 531
+        },
+        {
+          "attack_cat": "Shellcode",
+          "precision": 1.0,
+          "recall": 0.8817,
+          "f1": 0.9371,
+          "support": 355
+        },
+        {
+          "attack_cat": "Worms",
+          "precision": 1.0,
+          "recall": 0.7561,
+          "f1": 0.8611,
+          "support": 41
+        }
+      ],
+      "confusion": {
+        "labels": [
+          "Generic",
+          "Exploits",
+          "Fuzzers",
+          "DoS",
+          "Reconnaissance",
+          "Analysis",
+          "Backdoor",
+          "Shellcode",
+          "Worms"
+        ],
+        "matrix": [
+          [
+            18661,
+            189,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            9200,
+            317,
+            846,
+            212,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            291,
+            4413,
+            0,
+            146,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            1374,
+            0,
+            2395,
+            0,
+            78,
+            78,
+            0,
+            0
+          ],
+          [
+            0,
+            228,
+            65,
+            0,
+            2958,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            61,
+            0,
+            37,
+            0,
+            487,
+            24,
+            0,
+            0
+          ],
+          [
+            0,
+            64,
+            0,
+            53,
+            0,
+            27,
+            387,
+            0,
+            0
+          ],
+          [
+            0,
+            28,
+            14,
+            0,
+            0,
+            0,
+            0,
+            313,
+            0
+          ],
+          [
+            2,
+            8,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            31
+          ]
+        ]
+      }
+    }
+  },
+  "complexity": null
+}

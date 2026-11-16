@@ -22,6 +22,12 @@ MODELS_DIR = ARTIFACTS_DIR / "models"
 FIGURES_DIR = ARTIFACTS_DIR / "figures"
 REGISTRY_PATH = ARTIFACTS_DIR / "registry.json"
 
+# Archivos de la carpeta de cada modelo, artifacts/models/<model_name>/ (contrato, sección 10).
+MODEL_JOBLIB = "model.joblib"
+MODEL_JSON = "model.json"
+# Peso máximo de un model.joblib, en MB: artifacts/ se sube a git (contrato, sección 10).
+MAX_MODEL_SIZE_MB = 50
+
 STATIC_DIR = ROOT / "src" / "threat_detector" / "app" / "static"
 
 # Separación de entrenamiento y validación.

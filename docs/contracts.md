@@ -42,7 +42,7 @@ Estas reglas valen para todas las secciones siguientes.
 ### Formato
 
 - Las respuestas de la API y los mensajes de `WS /ws/simulate` son **JSON en UTF-8**. La única excepción es el archivo que se sube a `POST /api/predict`, que es un CSV (sección 4).
-- `model.json` y `registry.json` también son JSON en UTF-8.
+- `model.json` y `registry.json` también son JSON en UTF-8. Ningún número puede ser `NaN` ni infinito, porque no son JSON válido.
 
 ### Idioma
 
@@ -498,20 +498,20 @@ Métricas inventadas del modelo simulado. Los conteos de cada tipo salen de los 
       "is_mock": true,
       "test_flows": 82332,
       "detection": {
-        "detection_rate": 0.9493,
+        "detection_rate": 0.9483,
         "false_alarm_rate": 0.1452,
-        "precision": 0.889,
-        "f1": 0.9182,
+        "precision": 0.8889,
+        "f1": 0.9176,
         "pr_auc": 0.9611,
         "roc_auc": 0.9705,
-        "accuracy": 0.9068,
-        "confusion": { "tp": 43034, "fp": 5372, "tn": 31628, "fn": 2298 }
+        "accuracy": 0.9063,
+        "confusion": { "tp": 42987, "fp": 5372, "tn": 31628, "fn": 2345 }
       },
       "attack_type": {
-        "evaluated_flows": 43034,
+        "evaluated_flows": 42987,
         "macro_f1": 0.8526,
         "per_class": [
-          { "attack_cat": "Generic", "precision": 0.9999, "recall": 0.99, "f1": 0.9949, "support": 18897 },
+          { "attack_cat": "Generic", "precision": 0.9999, "recall": 0.99, "f1": 0.9949, "support": 18850 },
           { "attack_cat": "Exploits", "precision": 0.804, "recall": 0.87, "f1": 0.8357, "support": 10575 },
           { "attack_cat": "Fuzzers", "precision": 0.9177, "recall": 0.9099, "f1": 0.9138, "support": 4850 },
           { "attack_cat": "DoS", "precision": 0.719, "recall": 0.6102, "f1": 0.6601, "support": 3925 },
@@ -524,7 +524,7 @@ Métricas inventadas del modelo simulado. Los conteos de cada tipo salen de los 
         "confusion": {
           "labels": ["Generic", "Exploits", "Fuzzers", "DoS", "Reconnaissance", "Analysis", "Backdoor", "Shellcode", "Worms"],
           "matrix": [
-            [18708,  189,    0,    0,    0,   0,   0,   0,  0],
+            [18661,  189,    0,    0,    0,   0,   0,   0,  0],
             [    0, 9200,  317,  846,  212,   0,   0,   0,  0],
             [    0,  291, 4413,    0,  146,   0,   0,   0,  0],
             [    0, 1374,    0, 2395,    0,  78,  78,   0,  0],
@@ -771,6 +771,7 @@ Si la detección y el tipo salen de un solo modelo multiclase, las dos claves ap
 
 ### Cómo deben estar hechos los pipelines
 
+- **Dos pasos con nombre fijo.** Cada `Pipeline` tiene exactamente dos pasos: `"preprocessor"`, el `ColumnTransformer` de `build_preprocessor` con el método de preprocesamiento del modelo, y `"model"`, el estimador. El detector y el clasificador de un modelo usan el **mismo** método de preprocesamiento, el que declara `preprocessing_method` en `model.json` (sección 11).
 - **Llevan la preparación adentro.** Cada `Pipeline` recibe los flujos con sus columnas originales, tal como vienen en el archivo, y hace por dentro toda la preparación aprobada en el análisis exploratorio. Así la preparación del entrenamiento y la de la app son siempre la misma:
   - `log1p` a las variables asimétricas, con `FunctionTransformer(np.log1p)`.
   - Agrupación y one-hot de `CATEGORICAL_COLS`, con `OneHotEncoder(min_frequency=MIN_CATEGORY_FRACTION, handle_unknown="infrequent_if_exist", sparse_output=False)`. `MIN_CATEGORY_FRACTION` es `MIN_CATEGORY_COUNT / TRAIN_ROWS` (≈ 0,57 %): el mismo mínimo del análisis exploratorio, expresado como proporción. Así, al ajustar con la parte de entrenamiento, se conservan las mismas 18 categorías. Las categorías raras, las nuevas y las celdas vacías van a la misma columna "infrecuente" (`<variable>_infrequent_sklearn`).
@@ -778,7 +779,7 @@ Si la detección y el tipo salen de un solo modelo multiclase, las dos claves ap
   - Las columnas eliminadas en el análisis exploratorio no se usan.
 - **Solo piezas de scikit-learn.** Para cargar `model.joblib` basta con scikit-learn y joblib; nunca hace falta importar código de `threat_detector`. Si no fuera así, la app dependería de `ml/`.
 - **Otras librerías.** Un modelo puede usar otra librería que siga la interfaz de scikit-learn (`fit`, `predict_proba`, `classes_`). En ese caso, esa librería **debe estar en `requirements-prod.txt`**, porque la app la necesita para cargar el modelo.
-- **Tamaño máximo.** Cada `model.joblib` debe pesar **menos de 50 MB**. `artifacts/` se sube a git para que la app funcione al clonar el repo, y git no está hecho para archivos grandes. `ml/` lo vigila con `model_size_mb` de `model.json` (sección 11); si un modelo supera el límite, el equipo lo revisa antes de subirlo.
+- **Tamaño máximo.** Cada `model.joblib` debe pesar **menos de 50 MB**. `artifacts/` se sube a git para que la app funcione al clonar el repo, y git no está hecho para archivos grandes. `ml/` lo vigila con `model_size_mb` de `model.json` (sección 11); si un modelo supera el límite, el equipo lo revisa antes de subirlo. `model.joblib` se guarda sin compresión. Si pesa 50 MB o más, `ml/` avisa al guardarlo; no es un error.
 
 ### Cómo usa la app el modelo
 
@@ -806,6 +807,8 @@ Un modelo guardado con una versión de scikit-learn puede comportarse distinto, 
 
 - La app carga cada modelo registrado **una sola vez, al arrancar**, y lo mantiene en memoria.
 - **Si un modelo registrado no se puede cargar** (falta un archivo, está dañado o falta una librería), **la app no arranca** y muestra un error claro con el nombre del modelo y la causa. Así el problema se ve de inmediato y nunca hay una pantalla Modelos con datos a medias.
+- **`model.json` y `model.joblib` deben corresponder.** Al cargar se comprueba que el preprocesador de cada `Pipeline` usa exactamente las columnas de `numeric_cols` y `categorical_cols`. También se comprueba que existen las clases que se buscan por nombre: `1` o `"Normal"` en el detector, según `detector_type`, y los 9 tipos en el clasificador. Si algo no coincide, el modelo no se puede cargar.
+- **`ml/` hace las mismas comprobaciones al exportar.** Así, un modelo exportado siempre se puede cargar.
 - La app **nunca entrena** ni modifica nada dentro de `artifacts/`.
 - **El modelo simulado no cuenta como un modelo que no se pudo cargar:** si `model.json` dice `is_mock: true`, la app no busca `model.joblib` y usa `mock.py` en su lugar (sección 13). Que falte su `model.joblib` es lo esperado, no un error.
 
@@ -874,9 +877,9 @@ La regla es la de `CLAUDE.md`: el umbral más alto que deja al menos el 95 % de 
 
 | Campo | Tipo | Puede ser `null` | Qué es |
 |---|---|---|---|
-| `test_metrics` | objeto | No | Resultado de la evaluación sobre el conjunto de prueba completo: `test_flows`, `detection` y `attack_type`, con exactamente los campos de la sección 7. `GET /api/metrics` los devuelve tal cual. |
+| `test_metrics` | objeto | Solo si no está registrado | Resultado de la evaluación sobre el conjunto de prueba completo: `test_flows`, `detection` y `attack_type`, con exactamente los campos de la sección 7. `GET /api/metrics` los devuelve tal cual. |
 
-Un modelo se registra en `registry.json` (sección 12) **solo después** de su evaluación final, así que en un modelo registrado `test_metrics` nunca es `null`.
+Un modelo se puede exportar antes de su evaluación final, con `test_metrics` en `null`, pero se registra en `registry.json` (sección 12) **solo después** de ella. Por eso, en un modelo registrado `test_metrics` nunca es `null`, y si un modelo ya registrado se exporta de nuevo, también debe traerlo.
 
 ### Complejidad
 
@@ -963,20 +966,20 @@ Valores inventados, pero con las listas de variables reales que salen de las dec
   "test_metrics": {
     "test_flows": 82332,
     "detection": {
-      "detection_rate": 0.9493,
+      "detection_rate": 0.9483,
       "false_alarm_rate": 0.1452,
-      "precision": 0.889,
-      "f1": 0.9182,
+      "precision": 0.8889,
+      "f1": 0.9176,
       "pr_auc": 0.9611,
       "roc_auc": 0.9705,
-      "accuracy": 0.9068,
-      "confusion": { "tp": 43034, "fp": 5372, "tn": 31628, "fn": 2298 }
+      "accuracy": 0.9063,
+      "confusion": { "tp": 42987, "fp": 5372, "tn": 31628, "fn": 2345 }
     },
     "attack_type": {
-      "evaluated_flows": 43034,
+      "evaluated_flows": 42987,
       "macro_f1": 0.8526,
       "per_class": [
-        { "attack_cat": "Generic", "precision": 0.9999, "recall": 0.99, "f1": 0.9949, "support": 18897 },
+        { "attack_cat": "Generic", "precision": 0.9999, "recall": 0.99, "f1": 0.9949, "support": 18850 },
         { "attack_cat": "Exploits", "precision": 0.804, "recall": 0.87, "f1": 0.8357, "support": 10575 },
         { "attack_cat": "Fuzzers", "precision": 0.9177, "recall": 0.9099, "f1": 0.9138, "support": 4850 },
         { "attack_cat": "DoS", "precision": 0.719, "recall": 0.6102, "f1": 0.6601, "support": 3925 },
@@ -989,7 +992,7 @@ Valores inventados, pero con las listas de variables reales que salen de las dec
       "confusion": {
         "labels": ["Generic", "Exploits", "Fuzzers", "DoS", "Reconnaissance", "Analysis", "Backdoor", "Shellcode", "Worms"],
         "matrix": [
-          [18708, 189, 0, 0, 0, 0, 0, 0, 0],
+          [18661, 189, 0, 0, 0, 0, 0, 0, 0],
           [0, 9200, 317, 846, 212, 0, 0, 0, 0],
           [0, 291, 4413, 0, 146, 0, 0, 0, 0],
           [0, 1374, 0, 2395, 0, 78, 78, 0, 0],
@@ -1027,13 +1030,13 @@ Cada modelo de `models` tiene por ahora un solo campo, `name`. Es un objeto y no
 
 ### Reglas
 
-- **Quién lo escribe:** solo `ml/`, al registrar un modelo después de su evaluación final (sección 11). La app solo lo lee, una vez, al arrancar.
+- **Quién lo escribe:** solo `ml/`, al registrar un modelo después de su evaluación final (sección 11). La versión inicial, con solo el modelo simulado, se escribió a mano. La app solo lo lee, una vez, al arrancar.
 - **Sin rutas en el archivo:** la carpeta de cada modelo siempre es `artifacts/models/<name>/`, así que el registro guarda solo el nombre. Así no aparece ninguna ruta del computador de quien entrenó.
 - **Nombres únicos:** un `name` no puede repetirse en `models`.
 - **Todo debe coincidir:** cada `name` registrado tiene su carpeta con `model.json` (y `model.joblib`, salvo el modelo simulado), y el `name` de ese `model.json` es el mismo. `default_model` es uno de los `name` de `models`.
 - **Si algo no coincide, la app no arranca:** muestra un error claro que dice qué falta o qué no coincide, igual que con un modelo que no se puede cargar (sección 10). Esto también aplica si falta `registry.json`.
 - **Modelos sin registrar:** una carpeta en `artifacts/models/` que no está en `models` se ignora. Así se puede guardar un modelo antes de su evaluación final sin que aparezca en la app.
-- **Registrar no cambia el modelo por defecto:** agregar un modelo a `models` no cambia `default_model`. Cambiarlo es una decisión del equipo.
+- **Registrar no cambia el modelo por defecto:** agregar un modelo a `models` no cambia `default_model`. Cambiarlo es una decisión del equipo. Un modelo nuevo se agrega al final de `models`, antes del simulado si está. Registrar un modelo que ya está registrado no cambia nada.
 - **Mientras no haya modelos reales:** el único modelo registrado es el simulado, y es el modelo por defecto.
 
 ### Ejemplos
@@ -1069,6 +1072,7 @@ Permite programar y probar la app completa antes de tener modelos reales. Respon
 
 - **Carpeta:** `artifacts/models/mock/`, con solo `model.json` y **sin** `model.joblib` (sección 10).
 - **Registro:** está en `registry.json` y, mientras no haya modelos reales, es el único modelo y el modelo por defecto (sección 12).
+- **Nombre reservado:** `ml/` nunca exporta un modelo llamado `mock`. Los archivos del simulado se escriben a mano.
 - **Código:** las predicciones las calcula `app/mock.py`, no un `Pipeline`. La app lo usa porque `model.json` dice `is_mock: true`.
 - **En la interfaz:** `is_mock` llega en `GET /api/models` y en `GET /api/metrics`, y la interfaz debe advertir que los resultados son inventados mientras se use este modelo.
 
