@@ -70,7 +70,7 @@ El `id` de un flujo es el valor de la columna `id` (`ID_COL` en `dataset.py`) de
 - **Qué es un análisis:** el resultado de pasar un archivo por un modelo con `POST /api/predict`. Cada análisis tiene un `analysis_id` (texto) que lo identifica.
 - **Recuerda si tiene etiquetas:** el análisis guarda su valor de `has_labels` (sección 4). Todas las rutas que lo usan respetan ese modo: si se creó sin etiquetas, ninguna devuelve las etiquetas reales.
 - **Dónde se usa:** `GET /api/analysis/{analysis_id}` (sección 4), `GET /api/explain/{id}` (sección 5) y `WS /ws/simulate` (sección 8) trabajan sobre un análisis y reciben su `analysis_id`.
-- **Dónde se guarda:** el backend guarda en memoria **los últimos análisis**, para calcular la explicación de un flujo solo cuando se pide. El número de análisis guardados se decide junto con el tamaño máximo de archivo.
+- **Dónde se guarda:** el backend guarda en memoria **los últimos análisis**, para calcular la explicación de un flujo solo cuando se pide. Guarda los **15 análisis de archivos subidos más recientes** (`MAX_STORED_ANALYSES` en `config.py`). Al llegar uno nuevo se borra el más antiguo, por orden de creación; volver a consultar un análisis no lo renueva. Los análisis de la muestra de demostración no cuentan para ese límite, porque se regeneran solos.
 - **Si un análisis ya no existe:** porque el servidor se reinició o porque se borró para dar lugar a otros, la API responde con un error que pide volver a cargar el archivo (sección 9).
 - **La muestra de demostración no se pierde:** su análisis tiene un `analysis_id` fijo, que depende del modelo y del modo:
   - `"sample-<model_name>"` con etiquetas (por ejemplo, `"sample-mock"`).
@@ -585,6 +585,8 @@ Todos son JSON con un campo `type`.
 
 - **Velocidad no válida:** un `speed` que no esté en `SIMULATION_SPEEDS` se responde con un mensaje `"error"` (sección 9).
 - **Reiniciar:** el botón Reiniciar cierra la conexión y abre una nueva, con otro `"start"`.
+- **Mensajes fuera de orden:** `"pause"`, `"resume"` o `"set_speed"` antes de `"start"`, o un segundo `"start"` en la misma conexión, se responden con un mensaje `"error"` (`invalid_message`). Para reiniciar se abre una conexión nueva.
+- **`"resume"` sin pausa:** no hace nada.
 
 ### Ejemplo de una sesión
 
@@ -662,14 +664,15 @@ En `WS /ws/simulate`, el mismo objeto `error` llega dentro de un mensaje `{"type
 - **Se listan pocas filas:** `details` trae como máximo las 5 primeras filas con problemas, y el total en otro campo.
 - **Listas en texto legible:** en `message`, las columnas y filas se escriben separadas por comas (`sbytes, dbytes`), no como listas de Python (`['sbytes', 'dbytes']`). En `details` sí van como listas JSON.
 - **Sin detalles técnicos:** un error inesperado nunca muestra al usuario el error de Python. El detalle queda en el registro del servidor.
-- **Mismo formato siempre:** los errores de validación que FastAPI genera por defecto también se convierten a este formato.
+- **Mismo formato siempre:** los errores de validación que FastAPI genera por defecto también se convierten a este formato, con el código `invalid_request`.
 
 ### Códigos HTTP
 
 | Código | Cuándo |
 |---|---|
 | 400 | El pedido o el archivo tienen un problema que el usuario puede corregir. |
-| 404 | Lo que se pide no existe: un análisis o un flujo. |
+| 404 | Lo que se pide no existe: un análisis, un flujo o la dirección. |
+| 405 | La dirección existe, pero no acepta ese tipo de pedido. |
 | 413 | El archivo supera el tamaño máximo. |
 | 500 | Error inesperado del servidor. |
 
@@ -679,8 +682,8 @@ En `WS /ws/simulate`, el mismo objeto `error` llega dentro de un mensaje `{"type
 |---|---|---|---|---|
 | `no_file` | 400 | No se envió `file` y `use_sample` no es `true`. | "No se recibió ningún archivo. Selecciona un archivo CSV para analizar." | `null` |
 | `file_and_sample` | 400 | Se envió `file` y además `use_sample` = `true`. | "Envía un archivo o pide la muestra de demostración, pero no los dos a la vez." | `null` |
-| `file_too_large` | 413 | El archivo supera el tamaño máximo. | "El archivo pesa más de {límite} MB, que es el máximo permitido." | `max_mb` |
-| `unreadable_file` | 400 | El archivo no se puede leer como CSV. | "No se pudo leer el archivo. Revisa que sea un CSV separado por comas, con una fila de encabezado." | `null` |
+| `file_too_large` | 413 | El archivo supera el tamaño máximo. | "El archivo pesa más de 25 MB, que es el máximo permitido." | `max_mb` |
+| `unreadable_file` | 400 | El archivo no se puede leer como CSV. | "No se pudo leer el archivo. Revisa que sea un CSV separado por comas, con una fila de encabezado." Si el encabezado está separado por punto y coma: "El archivo está separado por punto y coma (;), pero debe estar separado por comas, como los CSV de UNSW-NB15. Guárdalo de nuevo con comas y vuelve a cargarlo." | `null` |
 | `empty_file` | 400 | El archivo solo tiene encabezado o está vacío. | "El archivo no tiene flujos para analizar." | `null` |
 | `unknown_model` | 400 | `model` no está en `registry.json`. | "El modelo «{model}» no está disponible. Elige otro en la pantalla Modelos." | `model` |
 | `missing_columns` | 400 | Faltan columnas obligatorias (sección 4). | "Al archivo le faltan columnas obligatorias: {columnas}." Lista todas las que faltan. | `missing_columns` (lista con todas) |
@@ -688,6 +691,8 @@ En `WS /ws/simulate`, el mismo objeto `error` llega dentro de un mensaje `{"type
 | `invalid_ids` | 400 | Algún `id` está vacío, no es un entero o se repite. | "Hay {total} flujo(s) con un id vacío, que no es un número entero o que está repetido. Primeras filas afectadas: {filas}." | `rows`, `total_rows` |
 | `invalid_values` | 400 | Alguna variable numérica está vacía, no es un número o es negativa. | "Hay {total} flujo(s) con valores {vacíos o no numéricos / negativos} en las columnas {columnas}. Primeras filas afectadas: {filas}." | `reason`, `columns`, `rows`, `total_rows` |
 | `invalid_labels` | 400 | Con etiquetas: `label` no es 0 o 1, o `attack_cat` no es uno de los 10 valores de la sección 2 (o alguna está vacía). | "Hay {total} flujo(s) con etiquetas no válidas en la columna {columna}. Primeras filas afectadas: {filas}." | `column`, `rows`, `total_rows` |
+
+El tamaño máximo es `MAX_UPLOAD_MB` en `config.py`: 25 MB, contando 1 MB = 1.000.000 bytes.
 
 En `invalid_values`, `reason` vale `"empty_or_not_numeric"` o `"negative"`, que son las dos revisiones de valores de `validate_flows` en `dataset.py`. Los infinitos cuentan como `"empty_or_not_numeric"`.
 
@@ -697,11 +702,19 @@ En `invalid_values`, `reason` vale `"empty_or_not_numeric"` o `"negative"`, que 
 |---|---|---|---|---|---|
 | `missing_analysis_id` | 400 | explain | No se envió `analysis_id`. | "Falta indicar a qué análisis pertenece el flujo." | `null` |
 | `analysis_not_found` | 404 | las tres | El análisis ya no está en memoria (y no es la muestra de demostración). | "Este análisis ya no está disponible. Vuelve a cargar el archivo para analizarlo de nuevo." | `analysis_id` |
-| `flow_not_found` | 404 | explain | El `id` no está en ese análisis. | "El flujo {id} no está en este análisis." | `id` |
-| `invalid_message` | — | simulación | El mensaje no es JSON, su `type` no existe o le falta un campo obligatorio. | "La simulación recibió un mensaje que no entiende. Reinicia la simulación." | `null` |
+| `flow_not_found` | 404 | explain | El `id` no está en ese análisis, o no es un número entero. | "El flujo {id} no está en este análisis." | `id` |
+| `invalid_message` | — | simulación | El mensaje no es JSON, su `type` no existe, le falta un campo obligatorio o llega fuera de orden (sección 8). | "La simulación recibió un mensaje que no entiende. Reinicia la simulación." | `null` |
 | `invalid_speed` | — | simulación | `speed` no está en `SIMULATION_SPEEDS`. | "La velocidad debe ser 1×, 2× o 4×." | `speed` |
 
 En la simulación no hay código HTTP: el error llega como mensaje `"error"` (sección 8).
+
+### Errores generales
+
+| `code` | HTTP | Cuándo | Mensaje | `details` |
+|---|---|---|---|---|
+| `invalid_request` | 400 | Un campo del pedido no tiene un valor válido, por ejemplo un `use_labels` que no es verdadero ni falso. También cualquier otro pedido que no se puede procesar, como un formulario dañado. | "El pedido no es válido: revisa el campo {campo}." Si el problema no es de un campo: "El pedido no es válido." | `field` (`null` si el problema no es de un campo) |
+| `not_found` | 404 | La dirección pedida no existe. | "La dirección pedida no existe." | `null` |
+| `method_not_allowed` | 405 | La dirección existe, pero no acepta ese tipo de pedido; por ejemplo, `GET /api/predict`. | "La dirección pedida no acepta este tipo de pedido." | `null` |
 
 ### Error inesperado
 

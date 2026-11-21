@@ -78,37 +78,122 @@ def load_flows(path, expected_rows):
     return flows
 
 
+class FlowValidationError(ValueError):
+    """Un archivo de flujos no se puede analizar; code y details siguen la sección 9 del contrato."""
+
+    def __init__(self, code, message, details=None):
+        super().__init__(message)
+        self.code = code
+        self.details = details
+
+
+def _bad_rows(bad):
+    """Primeras líneas del archivo con problemas (como máximo MAX_ERROR_ROWS) y total de filas con problemas.
+
+    bad trae un valor por flujo, en el orden del archivo. Se cuenta por posición, no por el índice
+    de pandas: posición + 2 = línea del archivo (el encabezado es la línea 1).
+    """
+    bad = np.asarray(bad, dtype=bool)
+    lines = (np.flatnonzero(bad)[:MAX_ERROR_ROWS] + 2).tolist()
+    return lines, int(bad.sum())
+
+
+def _numbers(values):
+    """Convierte una columna a números; lo que no es un número queda vacío (la columna recibida no cambia)."""
+    return pd.to_numeric(values, errors="coerce")
+
+
+def check_not_empty(flows):
+    """Lanza FlowValidationError (empty_file) si no hay ningún flujo."""
+    if len(flows) == 0:
+        raise FlowValidationError("empty_file", "El archivo no tiene flujos para analizar.")
+
+
+def check_columns(flows, required):
+    """Lanza FlowValidationError (missing_columns) con todas las columnas de required que faltan."""
+    missing = [c for c in required if c not in flows.columns]
+    if missing:
+        raise FlowValidationError(
+            "missing_columns",
+            f"Al archivo le faltan columnas obligatorias: {', '.join(missing)}.",
+            {"missing_columns": missing},
+        )
+
+
+def check_values(flows, numeric_cols):
+    """Lanza FlowValidationError (invalid_values) si una variable numérica está vacía, no es un número o es negativa.
+
+    Primero revisa los vacíos y los que no son números; solo si no hay, los negativos. Los
+    infinitos también cuentan como "no numéricos", porque no son una medida posible.
+    """
+    numbers = flows[numeric_cols].apply(_numbers)
+    problems = (
+        ("empty_or_not_numeric", "vacíos o no numéricos", ~np.isfinite(numbers)),
+        ("negative", "negativos", numbers < 0),
+    )
+    for reason, text, mask in problems:
+        lines, total = _bad_rows(mask.any(axis=1))
+        if total:
+            columns = mask.columns[mask.any()].tolist()
+            raise FlowValidationError(
+                "invalid_values",
+                f"Hay {total} flujo(s) con valores {text} en las columnas {', '.join(columns)}. "
+                f"Primeras filas afectadas: {', '.join(map(str, lines))}.",
+                {"reason": reason, "columns": columns, "rows": lines, "total_rows": total},
+            )
+
+
 def validate_flows(flows, numeric_cols, categorical_cols):
-    """Comprueba que los flujos se pueden preparar; si no, lanza ValueError con un mensaje en español.
+    """Comprueba que los flujos se pueden preparar; si no, lanza FlowValidationError con un mensaje en español.
 
     Revisa, en este orden: que haya al menos un flujo, que estén todas las columnas que usa el
     modelo, que las numéricas no tengan valores vacíos o que no son números, y que no sean
     negativas. Las filas se numeran como líneas del archivo (encabezado = línea 1), suponiendo
-    que los flujos están en el orden del archivo.
+    que los flujos están en el orden del archivo. FlowValidationError es un ValueError.
     """
-    if len(flows) == 0:
-        raise ValueError("El archivo no tiene flujos para analizar.")
+    check_not_empty(flows)
+    check_columns(flows, [*numeric_cols, *categorical_cols])
+    check_values(flows, numeric_cols)
 
-    missing = [c for c in [*numeric_cols, *categorical_cols] if c not in flows.columns]
-    if missing:
-        raise ValueError(f"Al archivo le faltan columnas obligatorias: {', '.join(missing)}.")
 
-    # Tabla nueva: los flujos recibidos no se modifican. Lo que no es un número queda vacío, y
-    # los infinitos también cuentan como "no numéricos", porque no son una medida posible.
-    numbers = flows[numeric_cols].apply(pd.to_numeric, errors="coerce")
-    problems = (
-        ("vacíos o no numéricos", ~np.isfinite(numbers)),
-        ("negativos", numbers < 0),
+def validate_ids(flows):
+    """Lanza FlowValidationError (invalid_ids) si algún id está vacío, no es un número entero o se repite.
+
+    Se comparan como números: 3.0 es el id 3, y 1 y 1.0 son el mismo id. Si un id se repite, se
+    marcan todas sus filas, para que se vean juntas.
+    """
+    ids = _numbers(flows[ID_COL])
+    not_integer = ~np.isfinite(ids) | (ids != np.floor(ids))
+    repeated = ids.duplicated(keep=False) & ~not_integer
+    lines, total = _bad_rows(not_integer | repeated)
+    if total:
+        raise FlowValidationError(
+            "invalid_ids",
+            f"Hay {total} flujo(s) con un id vacío, que no es un número entero o que está repetido. "
+            f"Primeras filas afectadas: {', '.join(map(str, lines))}.",
+            {"rows": lines, "total_rows": total},
+        )
+
+
+def validate_labels(flows):
+    """Lanza FlowValidationError (invalid_labels) si label no es 0 o 1, o attack_cat no es uno de los 10 valores.
+
+    label se compara como número: 0.0 y 1.0 valen, porque pandas lee la columna como decimal cuando
+    tiene una celda vacía. Una celda vacía no vale. Se revisa primero label y después attack_cat, y
+    el error trae solo la primera columna que falla.
+    """
+    checks = (
+        (TARGET, ~_numbers(flows[TARGET]).isin([0, 1])),
+        (ATTACK_CAT, ~flows[ATTACK_CAT].isin([NORMAL_CAT, *ATTACK_TYPES])),
     )
-    for reason, mask in problems:
-        bad_rows = mask.any(axis=1).to_numpy()
-        if bad_rows.any():
-            columns = mask.columns[mask.any()]
-            # Se cuenta por posición, no por el índice de pandas: posición + 2 = línea del archivo.
-            lines = np.flatnonzero(bad_rows)[:MAX_ERROR_ROWS] + 2
-            raise ValueError(
-                f"Hay {bad_rows.sum()} flujo(s) con valores {reason} en las columnas "
-                f"{', '.join(columns)}. Primeras filas afectadas: {', '.join(map(str, lines))}."
+    for column, bad in checks:
+        lines, total = _bad_rows(bad)
+        if total:
+            raise FlowValidationError(
+                "invalid_labels",
+                f"Hay {total} flujo(s) con etiquetas no válidas en la columna {column}. "
+                f"Primeras filas afectadas: {', '.join(map(str, lines))}.",
+                {"column": column, "rows": lines, "total_rows": total},
             )
 
 

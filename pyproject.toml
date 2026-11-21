@@ -12,6 +12,7 @@ authors = [
 ]
 requires-python = ">=3.13"
 dependencies = [
+    "fastapi[standard-no-fastapi-cloud-cli]==0.165.0",
     "ipykernel==7.4.0",
     "joblib==1.6.0",
     "matplotlib==3.11.2",
@@ -30,3 +31,6 @@ build-backend = "uv_build"
 testpaths = ["tests"]
 addopts = "-ra"
 markers = ["dataset: necesita los CSV completos de data/raw/"]
+
+[tool.fastapi]
+entrypoint = "threat_detector.app.main:app"

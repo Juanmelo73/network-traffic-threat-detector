@@ -1,6 +1,7 @@
 """Pruebas de dataset.py y de las constantes de config.py."""
 
 import io
+import json
 import re
 
 import numpy as np
@@ -28,9 +29,12 @@ from threat_detector.dataset import (
     RAW_COLUMNS,
     TARGET,
     TARGET_COLS,
+    FlowValidationError,
     load_flows,
     make_demo_sample,
     validate_flows,
+    validate_ids,
+    validate_labels,
 )
 from threat_detector.ml.preprocessing import numeric_input_cols
 
@@ -136,6 +140,99 @@ def test_only_the_first_max_error_rows_are_listed(sample_flows):
 def test_empty_categorical_value_is_not_rejected(sample_flows):
     sample_flows.loc[0, "service"] = np.nan
     assert validate(sample_flows) is None
+
+
+def raised(call, flows):
+    """El FlowValidationError que lanza call(flows)."""
+    with pytest.raises(FlowValidationError) as error:
+        call(flows)
+    return error.value
+
+
+def test_validation_errors_carry_code_and_json_ready_details(sample_flows):
+    # Cada revisión de validate_flows lanza su código de la sección 9 del contrato, con details en JSON.
+    negative = sample_flows.copy()
+    negative.loc[[3, 7], "sbytes"] = -1
+    cases = [
+        (sample_flows.iloc[0:0], "empty_file", None),
+        (sample_flows.drop(columns=["sttl", "proto"]), "missing_columns", {"missing_columns": ["sttl", "proto"]}),
+        (negative, "invalid_values", {"reason": "negative", "columns": ["sbytes"], "rows": [5, 9], "total_rows": 2}),
+    ]
+    for flows, code, details in cases:
+        error = raised(validate, flows)
+        assert isinstance(error, ValueError)
+        assert (error.code, error.details) == (code, details)
+        assert json.loads(json.dumps(error.details)) == details
+
+
+def test_empty_or_not_numeric_reason(sample_flows):
+    sample_flows["dur"] = sample_flows["dur"].astype(object)
+    sample_flows.loc[0, "dur"] = "abc"
+    assert raised(validate, sample_flows).details["reason"] == "empty_or_not_numeric"
+
+
+# validate_ids
+
+
+def test_valid_ids_pass(sample_flows):
+    assert validate_ids(sample_flows) is None
+    # 3.0 es el id 3: un entero escrito con decimales.
+    sample_flows[ID_COL] = sample_flows[ID_COL].astype(float)
+    assert validate_ids(sample_flows) is None
+
+
+@pytest.mark.parametrize("bad_value", [np.nan, 3.5, "abc"], ids=["empty", "not_integer", "not_a_number"])
+def test_empty_non_integer_and_non_numeric_ids_are_rejected(sample_flows, bad_value):
+    sample_flows[ID_COL] = sample_flows[ID_COL].astype(object)
+    sample_flows.loc[4, ID_COL] = bad_value
+    error = raised(validate_ids, sample_flows)
+    assert error.code == "invalid_ids"
+    assert error.details == {"rows": [6], "total_rows": 1}
+    assert str(error) == ("Hay 1 flujo(s) con un id vacío, que no es un número entero o que está repetido. "
+                          "Primeras filas afectadas: 6.")
+
+
+def test_repeated_ids_mark_every_row_with_that_id(sample_flows):
+    # 1 y 1.0 son el mismo id: se marcan las dos filas.
+    sample_flows[ID_COL] = sample_flows[ID_COL].astype(object)
+    sample_flows.loc[2, ID_COL] = 1
+    sample_flows.loc[9, ID_COL] = "1.0"
+    assert raised(validate_ids, sample_flows).details == {"rows": [4, 11], "total_rows": 2}
+
+
+# validate_labels
+
+
+def test_valid_labels_pass(sample_flows):
+    assert validate_labels(sample_flows) is None
+
+
+def test_label_is_compared_as_a_number(sample_flows):
+    # Con una celda vacía, pandas lee la columna como decimal: 0.0 y 1.0 siguen siendo válidos y
+    # el error lista solo la fila vacía.
+    sample_flows.loc[6, TARGET] = np.nan
+    assert sample_flows[TARGET].dtype == float
+    error = raised(validate_labels, sample_flows)
+    assert error.code == "invalid_labels"
+    assert error.details == {"column": TARGET, "rows": [8], "total_rows": 1}
+    assert str(error) == ("Hay 1 flujo(s) con etiquetas no válidas en la columna label. "
+                          "Primeras filas afectadas: 8.")
+
+
+@pytest.mark.parametrize(
+    "column, bad_value",
+    [(TARGET, 2), (ATTACK_CAT, "worms"), (ATTACK_CAT, np.nan)],
+    ids=["label_2", "attack_cat_lowercase", "attack_cat_empty"],
+)
+def test_invalid_labels_are_rejected(sample_flows, column, bad_value):
+    sample_flows.loc[[1, 3], column] = bad_value
+    assert raised(validate_labels, sample_flows).details == {"column": column, "rows": [3, 5], "total_rows": 2}
+
+
+def test_label_is_checked_before_attack_cat(sample_flows):
+    sample_flows.loc[0, ATTACK_CAT] = "worms"
+    sample_flows.loc[5, TARGET] = 2
+    assert raised(validate_labels, sample_flows).details["column"] == TARGET
 
 
 # load_flows

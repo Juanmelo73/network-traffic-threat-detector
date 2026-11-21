@@ -26,6 +26,8 @@ MODEL_JOBLIB = "model.joblib"
 MODEL_JSON = "model.json"
 # Peso máximo de un model.joblib, en MB: artifacts/ se sube a git (contrato, sección 10).
 MAX_MODEL_SIZE_MB = 50
+# Tamaños en MB: 1 MB = 1.000.000 bytes (contrato, sección 11).
+BYTES_PER_MB = 1_000_000
 
 STATIC_DIR = ROOT / "src" / "threat_detector" / "app" / "static"
 
@@ -55,3 +57,13 @@ DEMO_SAMPLE_CSV = STATIC_DIR / "sample_flows.csv"
 
 # Máximo de filas con problemas que se listan en un error de validación (contrato, sección 9).
 MAX_ERROR_ROWS = 5
+
+# App web (contrato, secciones 2, 8 y 9).
+# Tamaño máximo del CSV que se sube a POST /api/predict, en MB.
+MAX_UPLOAD_MB = 25
+# Análisis de archivos subidos que se guardan en memoria; los de la muestra de demostración no
+# cuentan, porque se regeneran solos.
+MAX_STORED_ANALYSES = 15
+# Pausa entre flujos de la simulación con velocidad 1, en segundos; con velocidad s es este valor / s.
+SIMULATION_INTERVAL_SECONDS = 1.0
+SIMULATION_SPEEDS = (1, 2, 4)
