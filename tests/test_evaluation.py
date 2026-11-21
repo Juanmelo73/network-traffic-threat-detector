@@ -1,0 +1,209 @@
+"""Pruebas de ml/evaluation.py: umbral de alerta y métricas, con datos escritos a mano y resultado conocido."""
+
+import json
+import math
+from fractions import Fraction
+
+import numpy as np
+import pytest
+
+from threat_detector.artifacts import detection_rate, is_alert
+from threat_detector.config import TARGET_RECALL
+from threat_detector.dataset import ATTACK_TYPES
+from threat_detector.ml.evaluation import (
+    attack_type_metrics,
+    compute_threshold,
+    detection_metrics,
+    threshold_rule,
+)
+
+# 20 ataques con probabilidades 0,05 a 1,00 (redondeadas a 2 decimales, para que el punto flotante
+# no cambie los valores esperados) y 10 normales: 6 con probabilidad ≥ 0,1 y 4 por debajo.
+ATTACK_PROBS = np.round(np.arange(1, 21) * 0.05, 2)
+NORMAL_PROBS = np.array([0.02, 0.05, 0.08, 0.09, 0.15, 0.2, 0.3, 0.5, 0.7, 0.9])
+Y_TRUE = np.array([1] * 20 + [0] * 10)
+PROBS = np.concatenate([ATTACK_PROBS, NORMAL_PROBS])
+
+# Caso a mano de detection_metrics: con umbral 0,5 hay tp=4, fp=1, tn=4 y fn=1.
+LABELS = [1, 1, 1, 1, 1, 0, 0, 0, 0, 0]
+SCORES = [0.90, 0.80, 0.70, 0.60, 0.20, 0.65, 0.30, 0.20, 0.10, 0.05]
+
+
+def round_trips_json(value):
+    """True si el valor se escribe en JSON y se lee de vuelta sin cambios (sin tipos de numpy)."""
+    return json.loads(json.dumps(value)) == value
+
+
+# compute_threshold
+
+
+def test_threshold_is_the_highest_that_keeps_target_recall():
+    # 95 % de 20 ataques = 19: el umbral es la probabilidad del ataque n.º 19 de mayor a menor, 0,1.
+    threshold = compute_threshold(Y_TRUE, PROBS)
+    assert threshold == 0.1
+    assert detection_rate(Y_TRUE, is_alert(PROBS, threshold)) == 0.95
+    # Un umbral apenas más alto ya deja menos del 95 %.
+    assert detection_rate(Y_TRUE, is_alert(PROBS, threshold + 1e-4)) == 0.9
+
+
+def test_normal_flows_do_not_change_the_threshold():
+    low_normals = np.full(10, 0.01)
+    high_normals = np.full(10, 0.99)
+    for normals in (low_normals, high_normals):
+        assert compute_threshold(Y_TRUE, np.concatenate([ATTACK_PROBS, normals])) == 0.1
+
+
+def test_needed_attacks_are_computed_exactly():
+    # ceil(TARGET_RECALL × ataques) con punto flotante da lo mismo que con fracciones exactas.
+    # Si cambia TARGET_RECALL, esta prueba vuelve a comprobarlo.
+    exact = Fraction(str(TARGET_RECALL))
+    assert all(math.ceil(TARGET_RECALL * n) == math.ceil(exact * n) for n in range(1, 50_001))
+
+
+def test_threshold_keeps_exactly_the_needed_attacks():
+    # De 1 a 200 ataques con probabilidades distintas: quedan como alerta exactamente los necesarios.
+    for attacks in range(1, 201):
+        probabilities = np.arange(1, attacks + 1) / (attacks + 1)
+        y_true = np.array([1] * attacks + [0])
+        threshold = compute_threshold(y_true, np.append(probabilities, 0.0))
+        needed = math.ceil(Fraction(str(TARGET_RECALL)) * attacks)
+        assert int(is_alert(probabilities, threshold).sum()) == needed, f"{attacks} ataques"
+
+
+def test_threshold_errors():
+    with pytest.raises(ValueError, match="deben traer los mismos flujos"):
+        compute_threshold([1, 0, 1], [0.5, 0.2])
+    with pytest.raises(ValueError, match="solo tienen una clase"):
+        compute_threshold([1, 1, 1], [0.5, 0.2, 0.9])
+
+
+# threshold_rule
+
+
+def test_threshold_rule_reports_what_the_threshold_achieved():
+    rule = threshold_rule(Y_TRUE, PROBS, 0.1)
+    assert rule == {
+        "target_recall": TARGET_RECALL,
+        "computed_on": "validation",
+        "validation_flows": 30,
+        "validation_detection_rate": 0.95,
+        "validation_false_alarm_rate": 0.6,
+    }
+    assert round_trips_json(rule)
+
+
+def test_threshold_rule_errors():
+    with pytest.raises(ValueError, match="deben traer los mismos flujos"):
+        threshold_rule([1, 0], [0.5], 0.5)
+    with pytest.raises(ValueError, match="solo tienen una clase"):
+        threshold_rule([0, 0], [0.5, 0.1], 0.5)
+
+
+# detection_metrics
+
+
+def test_detection_metrics_hand_case():
+    metrics = detection_metrics(LABELS, SCORES, 0.5)
+    assert metrics["confusion"] == {"tp": 4, "fp": 1, "tn": 4, "fn": 1}
+    assert metrics["detection_rate"] == pytest.approx(0.8)
+    assert metrics["false_alarm_rate"] == pytest.approx(0.2)
+    assert metrics["precision"] == pytest.approx(0.8)
+    assert metrics["f1"] == pytest.approx(0.8)
+    assert metrics["accuracy"] == pytest.approx(0.8)
+    # pr_auc: 0,2·1 + 0,2·1 + 0,2·1 + 0,2·0,8 + 0,2·0,625; roc_auc: 21,5 de 25 pares ataque-normal bien ordenados.
+    assert metrics["pr_auc"] == pytest.approx(0.885)
+    assert metrics["roc_auc"] == pytest.approx(0.86)
+    assert list(metrics) == ["detection_rate", "false_alarm_rate", "precision", "f1", "pr_auc",
+                             "roc_auc", "accuracy", "confusion"]
+    assert round_trips_json(metrics)
+
+
+def test_detection_metrics_perfect_separation():
+    metrics = detection_metrics([1, 1, 0, 0], [0.9, 0.8, 0.2, 0.1], 0.5)
+    assert metrics["pr_auc"] == 1.0 and metrics["roc_auc"] == 1.0 and metrics["f1"] == 1.0
+
+
+def test_detection_metrics_without_alerts():
+    metrics = detection_metrics(LABELS, SCORES, 0.95)
+    assert metrics["precision"] is None
+    assert metrics["f1"] == 0
+    assert metrics["detection_rate"] == 0
+
+
+def test_detection_metrics_errors():
+    with pytest.raises(ValueError, match="deben traer los mismos flujos"):
+        detection_metrics([1, 0], [0.5], 0.5)
+    with pytest.raises(ValueError, match="solo tienen una clase"):
+        detection_metrics([1, 1], [0.5, 0.6], 0.5)
+
+
+# attack_type_metrics
+
+
+def hand_attack_types():
+    """Tipos reales, tipos predichos y alertas escritos a mano (como en el notebook 04, sección 7)."""
+    rows = (
+        [("Generic", "Generic", True)] * 3 + [("Generic", "Exploits", True)]
+        + [("Exploits", "Exploits", True)] * 2 + [("Exploits", "Generic", True)]
+        + [("DoS", "Exploits", True), ("Fuzzers", None, False), ("Normal", "Generic", True)]
+    )
+    return (list(column) for column in zip(*rows))
+
+
+def test_attack_type_metrics_hand_case():
+    true_cats, predicted_cats, alerts = hand_attack_types()
+    metrics = attack_type_metrics(true_cats, predicted_cats, alerts)
+
+    # Solo cuentan los ataques reales con alerta: ni el Fuzzers sin alerta ni el Normal con alerta.
+    assert metrics["evaluated_flows"] == 8
+    by_type = {c["attack_cat"]: c for c in metrics["per_class"]}
+    assert [c["attack_cat"] for c in metrics["per_class"]] == ATTACK_TYPES
+    assert by_type["Generic"] == {"attack_cat": "Generic", "precision": 0.75, "recall": 0.75, "f1": 0.75, "support": 4}
+    assert by_type["Exploits"]["precision"] == 0.5
+    assert by_type["Exploits"]["recall"] == pytest.approx(2 / 3)
+    assert by_type["Exploits"]["f1"] == pytest.approx(4 / 7)
+    # DoS tiene flujos pero nunca se predijo: precisión None, recall y f1 en 0.
+    assert by_type["DoS"] == {"attack_cat": "DoS", "precision": None, "recall": 0.0, "f1": 0.0, "support": 1}
+    # Los tipos sin flujos ni predicciones no cuentan en macro_f1.
+    for attack_cat in set(ATTACK_TYPES) - {"Generic", "Exploits", "DoS"}:
+        assert by_type[attack_cat] == {"attack_cat": attack_cat, "precision": None, "recall": None,
+                                       "f1": None, "support": 0}
+    assert metrics["macro_f1"] == pytest.approx((0.75 + 4 / 7 + 0) / 3)
+
+    matrix = np.array(metrics["confusion"]["matrix"])
+    assert metrics["confusion"]["labels"] == ATTACK_TYPES and matrix.shape == (9, 9)
+    generic, exploits, dos = (ATTACK_TYPES.index(t) for t in ("Generic", "Exploits", "DoS"))
+    expected = np.zeros((9, 9), dtype=int)
+    expected[generic, generic], expected[generic, exploits] = 3, 1
+    expected[exploits, exploits], expected[exploits, generic] = 2, 1
+    expected[dos, exploits] = 1
+    np.testing.assert_array_equal(matrix, expected)
+    assert round_trips_json(metrics)
+
+
+def test_evaluated_flows_equal_detection_tp():
+    true_cats, predicted_cats, alerts = hand_attack_types()
+    labels = [int(cat != "Normal") for cat in true_cats]
+    detection = detection_metrics(labels, [0.9 if alert else 0.1 for alert in alerts], 0.5)
+    assert attack_type_metrics(true_cats, predicted_cats, alerts)["evaluated_flows"] == detection["confusion"]["tp"]
+
+
+def test_attack_type_metrics_without_evaluated_flows():
+    metrics = attack_type_metrics(["Generic", "Normal"], [None, None], [False, False])
+    assert metrics["evaluated_flows"] == 0
+    assert metrics["macro_f1"] is None
+    assert metrics["confusion"]["matrix"] == [[0] * 9 for _ in range(9)]
+
+
+@pytest.mark.parametrize(
+    "true_cats, predicted_cats, alerts, message",
+    [
+        (["Generic", "worms"], ["Generic", "Worms"], [True, True], "ataques reales con un tipo.*worms"),
+        (["Generic", "DoS"], ["Generic", "Normal"], [True, True], "alertas con un tipo probable.*Normal"),
+        (["Generic", "DoS"], ["Generic"], [True, True], "deben traer los mismos flujos"),
+    ],
+    ids=["invalid_true_type", "normal_as_predicted_type", "different_lengths"],
+)
+def test_attack_type_metrics_errors(true_cats, predicted_cats, alerts, message):
+    with pytest.raises(ValueError, match=message):
+        attack_type_metrics(true_cats, predicted_cats, alerts)

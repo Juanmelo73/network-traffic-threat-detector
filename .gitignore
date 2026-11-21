@@ -7,7 +7,6 @@ __pycache__/
 
 # Datos del dataset (no se suben, se descargan de la fuente oficial)
 data/raw/
-data/processed/
 
 # Jupyter
 .ipynb_checkpoints/
@@ -22,3 +21,9 @@ data/processed/
 .DS_Store
 Thumbs.db
 .vscode/
+
+# Contexto local de Claude Code (no se sube)
+CLAUDE.md
+
+# Material de referencia del curso (no se sube)
+notebooks/EDA_Clasificacion (1).ipynb

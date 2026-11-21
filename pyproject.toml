@@ -1,23 +1,32 @@
 [project]
 name = "threat-detector"
 version = "0.1.0"
-description = "Add your description here"
+description = "Network intrusion detection system with machine learning on UNSW-NB15 flows, with a web interface."
 readme = "README.md"
 authors = [
-    { name = "juan.melo", email = "juan.melo@uao.edu.co" }
+    { name = "Juan José Melo", email = "juan.melo@uao.edu.co" },
+    { name = "Juana López" },
+    { name = "Wilson Navia" },
+    { name = "Jaiber Obando" },
+    { name = "Eduardo Sarmiento" },
 ]
 requires-python = ">=3.13"
 dependencies = [
-    "ipykernel>=7.4.0",
-    "matplotlib>=3.11.2",
-    "numpy>=2.5.4",
-    "pandas>=3.0.6",
-    "seaborn>=0.13.2",
+    "ipykernel==7.4.0",
+    "joblib==1.6.0",
+    "matplotlib==3.11.2",
+    "numpy==2.5.4",
+    "pandas==3.0.6",
+    "pytest==9.2.0",
+    "scikit-learn==1.9.1",
+    "seaborn==0.13.2",
 ]
-
-[project.scripts]
-threat-detector = "threat_detector:main"
 
 [build-system]
 requires = ["uv_build>=0.13.0,<0.14.0"]
 build-backend = "uv_build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+markers = ["dataset: necesita los CSV completos de data/raw/"]
