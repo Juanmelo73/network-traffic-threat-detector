@@ -267,6 +267,8 @@ select {
   background-position: calc(100% - 17px) 55%, calc(100% - 12px) 55%; background-size: 5px 5px; background-repeat: no-repeat;
 }
 .select-field { display: inline-flex; align-items: center; gap: var(--space-2); font-size: 13px; color: var(--text-muted); }
+.check { display: inline-flex; align-items: center; gap: var(--space-2); min-height: 36px; font-size: 13px; color: var(--text-muted); cursor: pointer; }
+.check input { width: 18px; height: 18px; accent-color: var(--primary); }
 
 /* ---------- 9. Avisos ---------- */
 .notice {
@@ -504,9 +506,69 @@ select {
 .sample-note { display: flex; gap: var(--space-2); align-items: flex-start; font-size: 13px; color: var(--text-muted); }
 .sample-note .icon { margin-top: 2px; }
 
+/* ---------- Simulación: controles ---------- */
+.sim-controls { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-3) var(--space-5); }
+.sim-progress { flex: 1 1 240px; min-width: 200px; display: flex; flex-direction: column; gap: 6px; }
+.progress-label { display: flex; justify-content: space-between; font-size: 13px; color: var(--text-muted); }
+.progress-label .mono { color: var(--text); }
+.progress { height: 8px; border-radius: 4px; background: var(--surface-3); overflow: hidden; }
+.progress span { display: block; height: 100%; width: 0; background: var(--primary); border-radius: 4px; transition: width var(--dur) linear; }
+
+/* ---------- Simulación: escenario de la animación ---------- */
+/* Lo mismo que muestra el escenario está en los indicadores y el registro, así que es decorativo. */
+.stage svg { display: block; width: 100%; height: auto; max-height: 420px; }
+.stage-lane { fill: none; stroke: var(--border-strong); stroke-width: 2; }
+.stage-lane-in { stroke-dasharray: 5 6; }
+.stage-node rect { fill: var(--surface-2); stroke: var(--border-strong); stroke-width: 1; }
+.stage-node text { fill: var(--text); font-family: var(--font-sans); font-size: 14px; text-anchor: middle; }
+.stage-node .sub { fill: var(--text-muted); font-size: 12px; font-family: var(--font-mono); }
+.stage-node .count { font-family: var(--font-mono); font-size: 26px; font-weight: 600; }
+.stage-model rect { fill: var(--primary-soft); stroke: var(--primary); }
+.stage-model.is-busy rect { stroke-width: 2.5; }
+.stage-alerts rect { fill: var(--sev-critical-bg); stroke: var(--sev-critical); }
+.stage-alerts text { fill: var(--sev-critical); }
+.stage-normal rect { fill: var(--sev-normal-bg); stroke: var(--sev-normal); }
+.stage-normal text { fill: var(--sev-normal); }
+.sim-dot { fill: var(--text-muted); }
+.sim-dot.sev-critical { fill: var(--sev-critical); }
+.sim-dot.sev-high { fill: var(--sev-high); }
+.sim-dot.sev-medium { fill: var(--sev-medium); }
+.sim-dot.sev-low { fill: var(--sev-low); }
+.sim-dot.sev-normal { fill: var(--sev-normal); }
+.legend { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-4); font-size: 12px; color: var(--text-muted); margin-top: var(--space-3); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend i { width: 10px; height: 10px; border-radius: 50%; background: var(--c, var(--text-muted)); }
+
+/* ---------- Simulación: registro y última alerta ---------- */
+.sim-split { display: grid; grid-template-columns: minmax(0, 3fr) minmax(260px, 1fr); gap: var(--space-4); align-items: start; }
+.timeline { list-style: none; margin: 0; padding: 0; max-height: 60vh; overflow-y: auto; border: 1px solid var(--border); border-radius: var(--radius); }
+.timeline:empty { display: none; }
+.timeline.only-alerts .is-normal { display: none; }
+.tl-item { border-bottom: 1px solid var(--border); }
+.tl-item:last-child { border-bottom: 0; }
+.tl-btn {
+  width: 100%; display: grid; grid-template-columns: 52px 72px auto 1fr auto; align-items: center; gap: var(--space-3);
+  padding: 7px var(--space-3); background: none; border: 0; border-left: 4px solid transparent;
+  text-align: left; cursor: pointer; font-size: 13px;
+  transition: background var(--dur-fast) var(--ease-out);
+}
+.tl-btn:hover { background: var(--surface-2); }
+.tl-btn:focus-visible { outline-offset: -2px; }
+.tl-item.is-alert .tl-btn { border-left-color: var(--c); }
+.tl-item.is-normal .tl-btn { color: var(--text-muted); }
+.tl-pos, .tl-id, .tl-meta { font-family: var(--font-mono); color: var(--text-muted); }
+.tl-main { display: flex; gap: var(--space-2); align-items: center; min-width: 0; flex-wrap: wrap; }
+.tl-type { font-weight: 600; }
+.tl-prob { font-family: var(--font-mono); text-align: right; }
+.last-alert { display: flex; flex-direction: column; gap: var(--space-2); }
+.last-alert .eyebrow { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--text-muted); }
+.last-alert h3 { font-size: 17px; display: flex; align-items: baseline; gap: var(--space-2); flex-wrap: wrap; }
+.last-alert h3 .mono { font-weight: 400; font-size: 13px; color: var(--text-muted); }
+
 /* ---------- 17. Adaptación a pantallas ---------- */
 @media (max-width: 900px) {
   .upload-card { grid-template-columns: 1fr; }
+  .sim-split { grid-template-columns: 1fr; }
   .analysis-bar .bar-actions { margin-left: 0; }
   .toolbar .select-field { margin-left: 0; }
   .model-pill .pill-k { display: none; }
@@ -530,6 +592,8 @@ select {
   .pager .page-info { order: 3; width: 100%; text-align: center; }
   .select-field { flex-direction: column; align-items: stretch; width: 100%; }
   .select-field select { min-width: 0; width: 100%; }
+  .tl-btn { grid-template-columns: 44px auto 1fr auto; }
+  .tl-btn .tl-id { display: none; }
   .drawer { width: 100%; top: 0; z-index: 50; }
   .backdrop:not([hidden]) { display: block; z-index: 45; }
   /* 16 px en el selector en celular: Safari en iPhone amplía la página al tocar un campo de
@@ -544,7 +608,7 @@ select {
 }
 /* En pantallas táctiles, los controles pequeños llegan a 44 px de alto. */
 @media (pointer: coarse) {
-  .chip, .segmented button, select, .btn-sm, .link-btn { min-height: 44px; }
+  .chip, .segmented button, select, .btn-sm, .link-btn, .check { min-height: 44px; }
   .icon-btn { width: 44px; height: 44px; }
 }
 

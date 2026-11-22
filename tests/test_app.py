@@ -37,7 +37,15 @@ from threat_detector.artifacts import (
     read_model_info,
     severity,
 )
-from threat_detector.config import DEMO_SAMPLE_CSV, MAX_STORED_ANALYSES, MAX_UPLOAD_MB, REGISTRY_PATH, STATIC_DIR
+from threat_detector.config import (
+    DEMO_SAMPLE_CSV,
+    MAX_STORED_ANALYSES,
+    MAX_UPLOAD_MB,
+    REGISTRY_PATH,
+    SIMULATION_INTERVAL_SECONDS,
+    SIMULATION_SPEEDS,
+    STATIC_DIR,
+)
 from threat_detector.dataset import (
     ATTACK_CAT,
     ATTACK_TYPES,
@@ -1241,4 +1249,163 @@ def test_console_fits_small_screens(page, width):
     load_sample(page)
     page.locator("#queueTable tbody tr").first.click()
     page.locator(".expl-list li").first.wait_for()
+    assert page.evaluate("document.documentElement.scrollWidth") <= width
+
+
+
+# Simulación (simulation.html y js/simulation.js)
+
+
+def test_simulation_speeds_and_pace_match_the_backend():
+    html = (STATIC_DIR / "simulation.html").read_text(encoding="utf-8")
+    speeds = re.search(r'id="speeds">(.*?)</div>', html, re.DOTALL).group(1)
+    assert tuple(int(v) for v in re.findall(r'data-value="(\d+)"', speeds)) == SIMULATION_SPEEDS
+    script = (STATIC_DIR / "js" / "simulation.js").read_text(encoding="utf-8")
+    assert int(re.search(r"const INTERVAL_MS = (\d+);", script).group(1)) == SIMULATION_INTERVAL_SECONDS * 1000
+
+
+# Cuenta los puntos de la animación que se crean (window.dotsCreated).
+COUNT_DOTS = """
+window.dotsCreated = 0;
+new MutationObserver((records) => {
+  for (const r of records) for (const n of r.addedNodes) if (n.classList && n.classList.contains('sim-dot')) window.dotsCreated += 1;
+}).observe(document, { childList: true, subtree: true });
+"""
+
+
+def open_simulation(page, url="/simulation.html"):
+    page.goto(url)
+    page.locator("#playBtn:not([disabled])").wait_for()
+
+
+def wait_until_ended(page):
+    """Hasta que termina la reproducción y llegan las tasas del análisis completo."""
+    page.wait_for_function("document.getElementById('playBtn').textContent.includes('Reproducir de nuevo')", timeout=60000)
+    page.wait_for_function("!document.getElementById('kpis').textContent.includes('Se calcula al terminar')")
+
+
+def shown(page):
+    return int(page.locator("#progressText").inner_text().split("/")[0].strip().replace(".", ""))
+
+
+def test_full_simulation_matches_the_analysis(page, monkeypatch):
+    monkeypatch.setattr(routes, "SIMULATION_INTERVAL_SECONDS", 0.002)
+    page.emulate_media(reduced_motion="reduce")
+    page.add_init_script(COUNT_DOTS)
+    open_simulation(page)
+    page.locator("#playBtn").click()
+    wait_until_ended(page)
+    summary = api_json(page, "/api/analysis/sample-mock")["summary"]
+    stage = page.locator("#stage").inner_text()
+    assert f"Alertas\n{summary['alerts']}" in stage and f"Tráfico normal\n{summary['total_flows'] - summary['alerts']}" in stage
+    kpis = page.locator("#kpis").inner_text()
+    assert percent(summary["detection_rate"]) in kpis and "Se calcula al terminar" not in kpis
+    assert page.locator("#progressText").inner_text() == f"{summary['total_flows']} / {summary['total_flows']}"
+    assert page.locator("#logList li").count() == 50
+    # Con prefers-reduced-motion no se dibuja ningún punto.
+    assert page.evaluate("window.dotsCreated") == 0
+    page.locator("#onlyAlerts").check()
+    visible = page.locator("#logList li:visible")
+    assert visible.count() == page.locator("#logList li.is-alert").count() > 0
+    assert "simulación terminada" in page.locator("#simLive").inner_text()
+
+
+def test_pause_resume_and_speed(page, monkeypatch):
+    monkeypatch.setattr(routes, "SIMULATION_INTERVAL_SECONDS", 0.15)
+    sent = []
+    page.on("websocket", lambda ws: ws.on("framesent", lambda payload: sent.append(json.loads(payload))))
+    open_simulation(page)
+    page.locator("#playBtn").click()
+    page.wait_for_function("parseInt(document.getElementById('progressText').textContent) >= 2")
+    page.locator("#playBtn").click()
+    assert page.locator("#playBtn").inner_text().strip() == "Reanudar"
+    page.wait_for_timeout(400)
+    paused_at = shown(page)
+    page.wait_for_timeout(600)
+    assert shown(page) == paused_at
+    page.locator("#playBtn").click()
+    page.wait_for_function(f"parseInt(document.getElementById('progressText').textContent) > {paused_at}")
+    page.locator('#speeds [data-value="4"]').click()
+    page.wait_for_timeout(200)
+    assert {"type": "set_speed", "speed": 4} in sent
+    assert page.locator("#speedHelp").inner_text() == "4 flujos por segundo"
+    assert [m["type"] for m in sent[:3]] == ["start", "pause", "resume"]
+
+
+def test_clicking_a_flow_pauses_and_closing_resumes(page, monkeypatch):
+    monkeypatch.setattr(routes, "SIMULATION_INTERVAL_SECONDS", 0.15)
+    open_simulation(page)
+    page.locator("#playBtn").click()
+    item = page.locator("#logList .tl-btn").first
+    item.wait_for()
+    flow_id = item.locator(".tl-id").inner_text().split()[-1]
+    item.click()
+    assert page.locator("#drawerTitle").inner_text() == f"Flujo {flow_id}"
+    assert page.locator("#playBtn").inner_text().strip() == "Reanudar"
+    link = page.get_by_role("link", name="Abrir en la cola de alertas")
+    assert link.get_attribute("href") == f"index.html?analysis=sample-mock&flow={flow_id}"
+    page.keyboard.press("Escape")
+    assert page.locator("#playBtn").inner_text().strip() == "Pausar"
+
+
+def test_hidden_tab_applies_flows_without_animating(page, monkeypatch):
+    monkeypatch.setattr(routes, "SIMULATION_INTERVAL_SECONDS", 0.1)
+    page.add_init_script(COUNT_DOTS)
+    open_simulation(page)
+    page.locator('#speeds [data-value="4"]').click()
+    page.locator("#playBtn").click()
+    page.locator(".sim-dot").first.wait_for(state="attached")
+    set_visibility = """(state) => {
+        Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => state });
+        document.dispatchEvent(new Event('visibilitychange'));
+    }"""
+    page.evaluate(set_visibility, "hidden")
+    # Los puntos en camino llegan de inmediato; mientras esté oculta, no se crea ninguno.
+    assert page.locator(".sim-dot").count() == 0
+    before_dots, before_shown = page.evaluate("window.dotsCreated"), shown(page)
+    page.wait_for_timeout(800)
+    assert page.evaluate("window.dotsCreated") == before_dots
+    assert shown(page) > before_shown
+    assert page.locator("#kpis").inner_text().count(str(shown(page))) >= 1
+    # Al volver a la pestaña, la animación sigue con los flujos nuevos.
+    page.evaluate(set_visibility, "visible")
+    page.wait_for_function(f"window.dotsCreated > {before_dots}")
+
+
+def test_unlabeled_sample_and_linked_analysis(page, monkeypatch):
+    monkeypatch.setattr(routes, "SIMULATION_INTERVAL_SECONDS", 0.002)
+    page.emulate_media(reduced_motion="reduce")
+    open_simulation(page)
+    page.locator('#labelsMode [data-value="unlabeled"]').click()
+    page.wait_for_function("document.getElementById('analysisBar').textContent.includes('Sin etiquetas')")
+    page.locator("#playBtn").click()
+    wait_until_ended(page)
+    assert page.locator("#kpis").inner_text().count("Requiere etiquetas reales") == 2
+    # Desde la consola: se reproduce ese análisis y no hay selector de etiquetas.
+    open_simulation(page, "/simulation.html?analysis=sample-mock")
+    assert page.locator("#labelsMode").is_hidden()
+    assert "Con etiquetas" in page.locator("#analysisBar").inner_text()
+
+
+def test_simulation_errors(page):
+    page.goto("/simulation.html?analysis=a3f9c2e17b4d")
+    alert = page.locator("#simStatus [role=alert]")
+    alert.wait_for()
+    assert "Este análisis ya no está disponible" in alert.inner_text()
+    assert page.locator("#playBtn").is_disabled()
+    # El WebSocket se cierra sin "end" ni "error": network_error.
+    page.route_web_socket("**/ws/simulate", lambda ws: ws.close())
+    open_simulation(page)
+    page.locator("#playBtn").click()
+    page.locator("#simStatus [role=alert]").wait_for()
+    assert "No se pudo conectar con el servidor" in page.locator("#simStatus").inner_text()
+
+
+@pytest.mark.parametrize("width", [320, 375])
+def test_simulation_fits_small_screens(page, monkeypatch, width):
+    monkeypatch.setattr(routes, "SIMULATION_INTERVAL_SECONDS", 0.05)
+    page.set_viewport_size({"width": width, "height": 800})
+    open_simulation(page)
+    page.locator("#playBtn").click()
+    page.locator("#logList .tl-btn").first.wait_for()
     assert page.evaluate("document.documentElement.scrollWidth") <= width

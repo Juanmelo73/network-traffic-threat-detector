@@ -4,13 +4,11 @@
 import {
   ALERT_SEVERITIES, SEVERITIES, attackType, closeFlowPanel, copyLink, errorNotice, featureName,
   fetchAnalysis, flowResult, formatDecimal, formatInt, formatPercent, getChosenModel, h, icon,
-  initPage, initRadioGroup, isMockModel, mockNotice, modelName, openFlowPanel, predict, probability,
-  severityBadge,
+  initPage, initRadioGroup, isMockModel, isSampleAnalysis, mockNotice, modelName, openFlowPanel, predict,
+  probability, severityBadge,
 } from './common.js';
 
 const PAGE_SIZE = 25;
-// Los análisis de la muestra de demostración tienen analysis_id fijos que empiezan así (contrato, sección 2).
-const SAMPLE_PREFIX = 'sample-';
 const FILTERS = [
   { value: 'alerts', label: 'Todas las alertas', test: (f) => f.is_alert },
   ...ALERT_SEVERITIES.map((sev) => ({ value: sev, label: SEVERITIES[sev].label, icon: SEVERITIES[sev].icon, test: (f) => f.severity === sev })),
@@ -120,7 +118,7 @@ function wireUpload() {
 
 // ---------- Análisis ----------
 
-const isSample = (analysis) => analysis.analysis_id.startsWith(SAMPLE_PREFIX);
+const isSample = (analysis) => isSampleAnalysis(analysis.analysis_id);
 
 function showAnalysis(analysis) {
   closeFlowPanel({ restoreFocus: false });

@@ -60,7 +60,57 @@
       <span class="replay-tag"><svg class="icon" aria-hidden="true" focusable="false"><use href="assets/icons.svg#icon-activity"/></svg>Reproducción del análisis, no es tráfico en vivo</span>
     </div>
     <div id="pageStatus"></div>
-    <div id="screen" class="stack"></div>
+    <div id="screen" class="stack">
+      <div class="analysis-bar" id="analysisBar"></div>
+      <div id="mockSlot"></div>
+      <div id="simStatus"></div>
+
+      <section class="card sim-controls" aria-label="Controles de la simulación">
+        <div class="btn-row">
+          <button type="button" class="btn btn-primary" id="playBtn" disabled></button>
+          <button type="button" class="btn btn-secondary" id="resetBtn" disabled>
+            <svg class="icon" aria-hidden="true" focusable="false"><use href="assets/icons.svg#icon-rotate-ccw"/></svg>Reiniciar
+          </button>
+        </div>
+        <div class="btn-row">
+          <div class="segmented" role="radiogroup" aria-label="Velocidad" id="speeds">
+            <button type="button" role="radio" aria-checked="true" data-value="1">1×</button>
+            <button type="button" role="radio" aria-checked="false" data-value="2">2×</button>
+            <button type="button" role="radio" aria-checked="false" data-value="4">4×</button>
+          </div>
+          <span class="help" id="speedHelp"></span>
+        </div>
+        <div class="segmented" role="radiogroup" aria-label="Etiquetas de la muestra" id="labelsMode" hidden>
+          <button type="button" role="radio" aria-checked="true" data-value="labeled">Con etiquetas</button>
+          <button type="button" role="radio" aria-checked="false" data-value="unlabeled">Sin etiquetas</button>
+        </div>
+        <div class="sim-progress">
+          <div class="progress-label"><span>Progreso</span><span class="mono" id="progressText">0 / 0</span></div>
+          <div class="progress" id="progressBar" role="progressbar" aria-label="Progreso de la simulación" aria-valuemin="0" aria-valuemax="0" aria-valuenow="0"><span></span></div>
+        </div>
+      </section>
+
+      <section class="card stage" aria-label="Recorrido de los flujos">
+        <div id="stage" aria-hidden="true"></div>
+        <div class="legend" id="legend"></div>
+      </section>
+
+      <h2 class="section-title">Indicadores en vivo</h2>
+      <div class="kpis" id="kpis"></div>
+
+      <div class="sim-split">
+        <section class="card" aria-labelledby="h-log">
+          <div class="card-head">
+            <h2 id="h-log">Flujos recibidos <span class="muted">(últimos 50)</span></h2>
+            <label class="check"><input type="checkbox" id="onlyAlerts"> Mostrar solo alertas</label>
+          </div>
+          <ol class="timeline" id="logList" aria-labelledby="h-log"></ol>
+          <p class="empty" id="logEmpty">Pulsa <strong>Iniciar</strong> para reproducir los flujos del análisis.</p>
+        </section>
+        <section class="card last-alert" id="lastAlert" aria-label="Última alerta"></section>
+      </div>
+      <p class="sr-only" id="simLive" role="status"></p>
+    </div>
   </main>
 </body>
 </html>

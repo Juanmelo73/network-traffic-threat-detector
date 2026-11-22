@@ -108,6 +108,12 @@ export function setChosenModel(name) {
   writeStorage(STORAGE_KEYS.model, name);
 }
 
+// La muestra de demostración tiene analysis_id fijos (contrato, sección 2): sample-<modelo> con
+// etiquetas y sample-<modelo>-unlabeled sin ellas. Son los únicos ids que el frontend arma o interpreta.
+const SAMPLE_PREFIX = 'sample-';
+export const isSampleAnalysis = (analysisId) => analysisId.startsWith(SAMPLE_PREFIX);
+export const sampleAnalysisId = (modelName, labeled) => SAMPLE_PREFIX + modelName + (labeled ? '' : '-unlabeled');
+
 // Si un modelo es simulado: true o false según GET /api/models, o null si no aparece en la lista
 // (por ejemplo, un enlace viejo a un modelo que se quitó del registro). Con null no se supone nada.
 export function isMockModel(models, name) {
