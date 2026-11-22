@@ -1,13 +1,16 @@
-"""Pruebas de la app: predictores, análisis en memoria y rutas de la API (con TestClient)."""
+"""Pruebas de la app: predictores, análisis en memoria, rutas de la API (con TestClient), frontend y contraste de styles.css."""
 
 import json
 import logging
 import re
+import socket
+import threading
 import time
 
 import numpy as np
 import pandas as pd
 import pytest
+import uvicorn
 from conftest import structure, write_json
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
@@ -34,7 +37,7 @@ from threat_detector.artifacts import (
     read_model_info,
     severity,
 )
-from threat_detector.config import DEMO_SAMPLE_CSV, MAX_STORED_ANALYSES, MAX_UPLOAD_MB, REGISTRY_PATH
+from threat_detector.config import DEMO_SAMPLE_CSV, MAX_STORED_ANALYSES, MAX_UPLOAD_MB, REGISTRY_PATH, STATIC_DIR
 from threat_detector.dataset import (
     ATTACK_CAT,
     ATTACK_TYPES,
@@ -781,3 +784,461 @@ def test_unexpected_simulation_error_hides_the_python_error(client, interval, sa
     assert messages[-1]["error"]["code"] == "internal_error"
     assert "detalle interno" not in json.dumps(messages)
     assert "detalle interno" in caplog.text
+
+
+# Contraste de los colores de styles.css
+#
+# Fórmulas de WCAG 2.2 (https://www.w3.org/TR/WCAG22/): luminancia relativa y razón de contraste del
+# glosario; mínimos de 4,5:1 para texto (criterio 1.4.3) y 3:1 para íconos, bordes y barras (1.4.11).
+
+STYLES_CSS = STATIC_DIR / "styles.css"
+THEME_BLOCKS = {
+    "light": r':root,\s*\[data-theme="light"\]\s*\{(.*?)\}',
+    "dark": r'\[data-theme="dark"\]\s*\{(.*?)\}',
+}
+
+# [qué se comprueba, color, fondo, mínimo]. Un fondo "a/b" es el color a (con transparencia) sobre el
+# b; "heat@max" es la celda más intensa de la matriz 9×9.
+CONTRAST_CHECKS = [
+    ("Texto sobre el fondo", "text", "bg", 4.5),
+    ("Texto sobre una tarjeta", "text", "surface", 4.5),
+    ("Texto sobre una zona sombreada", "text", "surface-2", 4.5),
+    ("Texto secundario sobre una tarjeta", "text-muted", "surface", 4.5),
+    ("Texto secundario sobre una zona sombreada", "text-muted", "surface-2", 4.5),
+    ("Texto secundario sobre el fondo", "text-muted", "bg", 4.5),
+    ("Enlace sobre una tarjeta", "primary", "surface", 4.5),
+    ("Texto de botón principal", "on-primary", "primary", 4.5),
+    ("Texto sobre la fila seleccionada", "text", "primary-soft/surface", 4.5),
+    ("Contorno de foco sobre el fondo", "focus", "bg", 3),
+    ("Contorno de foco sobre una tarjeta", "focus", "surface", 3),
+    ("Borde de los controles", "border-strong", "surface", 3),
+    *[check for level in ("critical", "high", "medium", "low", "normal") for check in (
+        (f"Severidad {level}: texto de la insignia", f"sev-{level}", f"sev-{level}-bg/surface", 4.5),
+        (f"Severidad {level}: ícono y borde sobre una tarjeta", f"sev-{level}", "surface", 3),
+    )],
+    ("Explicación: número hacia «ataque»", "push-attack", "surface", 4.5),
+    ("Explicación: número hacia «normal»", "push-normal", "surface", 4.5),
+    ("Explicación: barra hacia «ataque»", "push-attack", "surface-2", 3),
+    ("Explicación: barra hacia «normal»", "push-normal", "surface-2", 3),
+    ("Resultado correcto", "ok", "surface", 4.5),
+    ("Resultado incorrecto", "bad", "surface", 4.5),
+    ("Texto del aviso", "text", "warn-bg/surface", 4.5),
+    ("Título del aviso", "warn-text", "warn-bg/surface", 4.5),
+    ("Aviso de modelo simulado", "warn-text", "warn-bg/surface", 4.5),
+    ("Texto del recuadro informativo", "text", "info-bg/surface", 4.5),
+    ("Error: texto", "text", "sev-critical-bg/surface", 4.5),
+    ("Matriz: número sobre la celda más intensa", "text", "heat@max/surface", 4.5),
+    ("Animación: punto sin evaluar", "text-muted", "surface", 3),
+    ("Animación: carriles entre nodos", "border-strong", "surface", 3),
+    ("Animación: texto del nodo Modelo", "text", "primary-soft/surface", 4.5),
+    ("Animación: borde del nodo Modelo", "primary", "surface", 3),
+    ("Animación: título y conteo de «Alertas»", "sev-critical", "sev-critical-bg/surface", 4.5),
+    ("Animación: borde de «Alertas»", "sev-critical", "surface", 3),
+    ("Animación: título y conteo de «Tráfico normal»", "sev-normal", "sev-normal-bg/surface", 4.5),
+    ("Animación: borde de «Tráfico normal»", "sev-normal", "surface", 3),
+]
+
+
+def theme_tokens(theme):
+    """Las variables (--nombre: valor) de un tema de styles.css."""
+    css = STYLES_CSS.read_text(encoding="utf-8")
+    block = re.search(THEME_BLOCKS[theme], css, re.DOTALL).group(1)
+    return {name: value.strip() for name, value in re.findall(r"--([\w-]+)\s*:\s*([^;]+);", block)}
+
+
+def parse_color(text):
+    """(r, g, b, alfa) de un color #RRGGBB o rgb()/rgba()."""
+    if m := re.fullmatch(r"#([0-9a-fA-F]{6})", text):
+        n = int(m.group(1), 16)
+        return (n >> 16) & 255, (n >> 8) & 255, n & 255, 1.0
+    m = re.fullmatch(r"rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*(?:,\s*([\d.]+)\s*)?\)", text)
+    assert m, f"Color no reconocido: {text}"
+    return float(m.group(1)), float(m.group(2)), float(m.group(3)), float(m.group(4) or 1)
+
+
+def resolve(tokens, name):
+    """El color opaco de un nombre de CONTRAST_CHECKS."""
+    if "/" in name:
+        top, base = name.split("/")
+        r, g, b, a = resolve_raw(tokens, top)
+        br, bg, bb, _ = resolve(tokens, base)
+        return r * a + br * (1 - a), g * a + bg * (1 - a), b * a + bb * (1 - a), 1.0
+    return resolve_raw(tokens, name)
+
+
+def resolve_raw(tokens, name):
+    if name == "heat@max":
+        r, g, b = (float(v) for v in tokens["heat"].split(","))
+        return r, g, b, float(tokens["heat-max"])
+    return parse_color(tokens[name])
+
+
+def luminance(color):
+    def linear(c8):
+        c = c8 / 255
+        return c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
+    r, g, b, _ = color
+    return 0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b)
+
+
+def contrast(a, b):
+    la, lb = sorted((luminance(a), luminance(b)), reverse=True)
+    return (la + 0.05) / (lb + 0.05)
+
+
+def test_contrast_formula_matches_wcag_limits():
+    black, white = (0, 0, 0, 1.0), (255, 255, 255, 1.0)
+    assert contrast(black, white) == pytest.approx(21)
+    assert contrast(white, white) == pytest.approx(1)
+
+
+def test_both_themes_define_the_same_colors():
+    light, dark = theme_tokens("light"), theme_tokens("dark")
+    assert set(light) == set(dark)
+    assert len(light) > 30
+
+
+@pytest.mark.parametrize("theme", ["light", "dark"])
+def test_palette_colors_have_enough_contrast(theme):
+    tokens = theme_tokens(theme)
+    failures = []
+    for label, fg, bg, minimum in CONTRAST_CHECKS:
+        ratio = contrast(resolve(tokens, fg), resolve(tokens, bg))
+        if ratio < minimum:
+            failures.append(f"{label}: {ratio:.2f}:1 (mínimo {minimum}:1)")
+    assert len(CONTRAST_CHECKS) == 42
+    assert not failures, "\n".join(failures)
+
+
+# Frontend: archivos de static/
+
+PAGES = ["index.html", "simulation.html", "compare.html"]
+CONTENT_TYPES = {".html": "text/html", ".css": "text/css", ".js": "text/javascript", ".svg": "image/svg+xml", ".csv": "text/csv"}
+# Elementos que js/common.js busca en todas las páginas.
+COMMON_IDS = ["main", "modelPill", "themeToggle", "pageStatus", "screen"]
+
+
+def local_references(html):
+    """Archivos propios que enlaza una página (href y src que no son externos ni anclas)."""
+    refs = re.findall(r'(?:href|src)="([^"#]+)', html)
+    return sorted({ref.split("?")[0] for ref in refs if not ref.startswith(("http:", "https:", "mailto:"))})
+
+
+@pytest.mark.parametrize("page_name", PAGES)
+def test_pages_and_their_files_are_served(client, page_name):
+    response = client.get("/" + page_name)
+    assert response.status_code == 200 and response.headers["content-type"].startswith("text/html")
+    for ref in local_references(response.text):
+        served = client.get("/" + ref)
+        assert served.status_code == 200, ref
+        suffix = "." + ref.rsplit(".", 1)[-1]
+        assert served.headers["content-type"].startswith(CONTENT_TYPES[suffix]), ref
+    assert client.get("/").text == client.get("/index.html").text
+
+
+@pytest.mark.parametrize("page_name", PAGES)
+def test_pages_have_the_common_structure(page_name):
+    html = (STATIC_DIR / page_name).read_text(encoding="utf-8")
+    for element_id in COMMON_IDS:
+        assert f'id="{element_id}"' in html, element_id
+    # El modo se aplica antes de cargar los estilos, para que no parpadee.
+    assert html.index("localStorage.getItem('ntd-theme')") < html.index('href="styles.css"')
+    assert 'lang="es"' in html and html.count('aria-current="page"') == 1
+
+
+def icon_names():
+    """Los íconos de assets/icons.svg."""
+    return set(re.findall(r'<symbol id="icon-([a-z-]+)"', (STATIC_DIR / "assets" / "icons.svg").read_text(encoding="utf-8")))
+
+
+def test_every_icon_used_exists():
+    used = set()
+    for path in [*STATIC_DIR.glob("*.html"), *STATIC_DIR.glob("js/*.js")]:
+        text = path.read_text(encoding="utf-8")
+        used |= set(re.findall(r"#icon-([a-z-]+)", text))
+        used |= set(re.findall(r"icon(?:Button)?\('([a-z-]+)'", text))
+        used |= set(re.findall(r"icon: '([a-z-]+)'", text))
+    assert used, "no se encontró ningún ícono usado"
+    assert used <= icon_names(), used - icon_names()
+    assert len(icon_names()) == 26
+
+
+def js_object_keys(text, name):
+    """Las claves de un objeto literal "export const NAME = { ... };" de common.js."""
+    body = re.search(rf"export const {name} = \{{(.*?)\n\}};", text, re.DOTALL).group(1)
+    return re.findall(r"^\s*([A-Za-z_]+):", body, re.MULTILINE)
+
+
+def test_common_js_texts_cover_the_model_variables_and_attack_types(mock):
+    text = (STATIC_DIR / "js" / "common.js").read_text(encoding="utf-8")
+    assert sorted(js_object_keys(text, "FEATURE_LABELS")) == sorted(mock.info["feature_groups"])
+    assert sorted(js_object_keys(text, "ATTACK_TYPE_DESCRIPTIONS")) == sorted(ATTACK_TYPES)
+    assert sorted(js_object_keys(text, "SEVERITIES")) == sorted(["critical", "high", "medium", "low", "normal"])
+    assert "arXiv:1711.02825" in text
+
+
+# Frontend en un navegador real (Playwright). Se saltan solas si falta Playwright o su Chromium.
+
+
+def free_port():
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
+@pytest.fixture(scope="module")
+def live_server():
+    """La app corriendo con Uvicorn en un puerto libre, con el artifacts/ real."""
+    port = free_port()
+    server = uvicorn.Server(uvicorn.Config(create_app(), host="127.0.0.1", port=port, log_level="warning"))
+    thread = threading.Thread(target=server.run, daemon=True)
+    thread.start()
+    for _ in range(100):
+        if server.started:
+            break
+        time.sleep(0.05)
+    yield f"http://127.0.0.1:{port}"
+    server.should_exit = True
+    thread.join(timeout=5)
+
+
+@pytest.fixture(scope="module")
+def browser():
+    sync_api = pytest.importorskip("playwright.sync_api", reason="Falta Playwright (uv add -r requirements.txt)")
+    with sync_api.sync_playwright() as p:
+        try:
+            chromium = p.chromium.launch()
+        except sync_api.Error:
+            pytest.skip("Falta el Chromium de Playwright (uv run playwright install --with-deps chromium)")
+        yield chromium
+        chromium.close()
+
+
+@pytest.fixture
+def page(browser, live_server):
+    context = browser.new_context(base_url=live_server)
+    yield context.new_page()
+    context.close()
+
+
+def test_header_shows_the_chosen_model_and_the_mock_tag(page):
+    page.goto("/index.html")
+    pill = page.locator("#modelPill")
+    pill.wait_for(state="visible")
+    assert "Modelo simulado" in pill.inner_text() and "Simulado" in pill.inner_text()
+    # Los íconos del sprite se dibujan: el de la navegación tiene tamaño.
+    assert page.evaluate("document.querySelector('.mainnav svg use').getBBox().width") > 0
+
+
+def test_theme_toggle_is_saved_and_applied_before_painting(page):
+    page.goto("/index.html")
+    start = page.evaluate("document.documentElement.dataset.theme")
+    page.locator("#themeToggle").click()
+    other = "dark" if start == "light" else "light"
+    assert page.evaluate("document.documentElement.dataset.theme") == other
+    # Al recargar, el modo guardado ya está puesto cuando se lee el HTML, antes de los estilos.
+    page.add_init_script("document.addEventListener('readystatechange', () => { window.firstTheme ??= document.documentElement.dataset.theme; });")
+    page.reload()
+    assert page.evaluate("window.firstTheme") == other
+
+
+def test_unknown_model_shows_its_name_without_guessing_if_it_is_mock(page):
+    page.goto("/index.html")
+    result = page.evaluate("""async () => {
+        const c = await import('/js/common.js');
+        const models = await c.fetchModels();
+        const gone = c.modelName(models, { name: 'removed_model', display_name: 'Modelo retirado' });
+        const mock = c.modelName(models, { name: 'mock', display_name: 'Modelo simulado' });
+        return {
+            goneText: gone.textContent, goneTag: !!gone.querySelector('.tag-mock'),
+            goneMock: c.isMockModel(models, 'removed_model'),
+            mockTag: !!mock.querySelector('.tag-mock'), mockMock: c.isMockModel(models, 'mock'),
+        };
+    }""")
+    assert result == {"goneText": "Modelo retirado", "goneTag": False, "goneMock": None,
+                      "mockTag": True, "mockMock": True}
+
+
+def test_without_server_the_page_shows_network_error(page):
+    page.route("**/api/models", lambda route: route.abort())
+    page.goto("/index.html")
+    alert = page.locator("#pageStatus [role=alert]")
+    alert.wait_for()
+    assert "No se pudo conectar con el servidor" in alert.inner_text()
+
+
+# Consola (index.html y js/analysis.js)
+
+
+def test_upload_help_and_page_size_match_the_code():
+    html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+    assert int(re.search(r"Máximo (\d+) MB", html).group(1)) == MAX_UPLOAD_MB
+    script = (STATIC_DIR / "js" / "analysis.js").read_text(encoding="utf-8")
+    page_size = int(re.search(r"const PAGE_SIZE = (\d+);", script).group(1))
+    assert f"{page_size} flujos por página" in html
+
+
+def percent(value):
+    """Una tasa como la muestra la consola (es-CO, un decimal)."""
+    return f"{value * 100:.1f}".replace(".", ",") + "%"
+
+
+def load_sample(page, labeled=True):
+    page.goto("/index.html")
+    page.locator("#sampleLabeled" if labeled else "#sampleUnlabeled").click()
+    page.locator("#results").wait_for(state="visible")
+
+
+def api_json(page, path):
+    return page.request.get(path).json()
+
+
+def queue_ids(page):
+    return [int(i) for i in page.locator("#queueTable tbody tr").evaluate_all("rows => rows.map(r => r.dataset.id)")]
+
+
+def test_console_with_the_labeled_sample(page):
+    load_sample(page)
+    analysis = api_json(page, "/api/analysis/sample-mock")
+    summary = analysis["summary"]
+    assert page.url.endswith("index.html?analysis=sample-mock")
+    kpis = page.locator("#kpis").inner_text()
+    assert percent(summary["detection_rate"]) in kpis and percent(summary["false_alarm_rate"]) in kpis
+    assert page.locator("#queueCount").inner_text() == f"Mostrando 1–25 de {summary['alerts']} alertas"
+    assert "Clase real" in page.locator("#queueTable thead").inner_text()
+    assert page.locator("#mockSlot [role=note]").is_visible() and page.locator("#sampleNote").is_visible()
+    assert "Muestra de demostración" in page.locator("#analysisBar").inner_text()
+    # Orden por probabilidad (desempate: orden del archivo) entre las alertas.
+    alerts = [f for f in analysis["flows"] if f["is_alert"]]
+    expected = [f["id"] for f in sorted(alerts, key=lambda f: -f["attack_probability"])][:25]
+    assert queue_ids(page) == expected
+
+
+def test_console_with_the_unlabeled_sample(page):
+    load_sample(page, labeled=False)
+    assert page.locator("#kpis").inner_text().count("Requiere etiquetas reales") == 2
+    assert "Clase real" not in page.locator("#queueTable thead").inner_text()
+    assert "Sin etiquetas" in page.locator("#analysisBar").inner_text()
+
+
+def test_filters_order_and_pages(page):
+    load_sample(page)
+    summary = api_json(page, "/api/analysis/sample-mock")["summary"]
+    for severity, label in (("critical", "Crítica"), ("high", "Alta"), ("medium", "Media"), ("low", "Baja")):
+        page.locator(f'#filters [data-value="{severity}"]').click()
+        assert page.locator("#queueCount").inner_text().endswith(f"de {summary['alerts_by_severity'][severity]} alertas")
+        badges = page.locator("#queueTable tbody .sev-badge").all_inner_texts()
+        assert badges and all(text.strip() == label for text in badges)
+    page.locator('#filters [data-value="all"]').click()
+    page.locator("#sortSelect").select_option("file")
+    flows = api_json(page, "/api/analysis/sample-mock")["flows"]
+    assert page.locator("#queueCount").inner_text() == f"Mostrando 1–25 de {summary['total_flows']} flujos"
+    assert queue_ids(page) == [f["id"] for f in flows[:25]]
+    page.locator("#nextPage").click()
+    assert queue_ids(page) == [f["id"] for f in flows[25:50]]
+    assert page.locator("#pageInfo").inner_text() == "Página 2 de 20"
+
+
+def test_flow_panel_with_mouse_and_keyboard(page):
+    load_sample(page)
+    first = page.locator("#queueTable tbody tr").first
+    flow_id = first.get_attribute("data-id")
+    first.click()
+    assert page.locator("#drawerTitle").inner_text() == f"Flujo {flow_id}"
+    assert page.url.endswith(f"?analysis=sample-mock&flow={flow_id}")
+    page.locator(".expl-list li").first.wait_for()
+    assert page.locator(".expl-list li").count() == 10
+    page.get_by_role("button", name="Ver todas (35)").click()
+    assert page.locator(".expl-list li").count() == 35
+    page.keyboard.press("Escape")
+    assert page.locator(".drawer").count() == 0
+    assert page.evaluate("document.activeElement.dataset.id") == flow_id
+    assert page.url.endswith("?analysis=sample-mock")
+    second = page.locator("#queueTable tbody tr").nth(1)
+    second.focus()
+    page.keyboard.press("Enter")
+    assert page.locator("#drawerTitle").inner_text() == f"Flujo {second.get_attribute('data-id')}"
+
+
+def test_direct_link_to_a_flow(page):
+    flows = api_json(page, "/api/analysis/sample-mock")["flows"]
+    normal = next(f for f in flows if not f["is_alert"])
+    page.goto(f"/index.html?analysis=sample-mock&flow={normal['id']}")
+    assert page.locator("#drawerTitle").inner_text() == f"Flujo {normal['id']}"
+    assert page.locator('#filters [data-value="all"]').get_attribute("aria-checked") == "true"
+    assert page.locator(f'#queueTable tbody tr[data-id="{normal["id"]}"]').get_attribute("class") == "is-selected"
+    page.goto("/index.html?analysis=sample-mock&flow=999999999")
+    page.locator(".drawer [role=alert]").wait_for()
+    assert "El flujo 999999999 no está en este análisis." in page.locator(".drawer").inner_text()
+
+
+def test_link_to_a_missing_analysis(page):
+    page.goto("/index.html?analysis=a3f9c2e17b4d")
+    alert = page.locator("#uploadStatus [role=alert]")
+    alert.wait_for()
+    assert "Este análisis ya no está disponible" in alert.inner_text()
+    assert page.locator("#results").is_hidden()
+
+
+def test_uploaded_files(page):
+    page.goto("/index.html")
+    page.locator("#fileInput").set_input_files(str(DEMO_SAMPLE_CSV))
+    page.locator("#results").wait_for(state="visible")
+    assert "sample_flows.csv" in page.locator("#analysisBar").inner_text()
+    assert re.search(r"\?analysis=[0-9a-f]{12}$", page.url)
+    page.locator("#fileInput").set_input_files({"name": "malo.csv", "mimeType": "text/csv", "buffer": b"id,proto\n1,tcp\n"})
+    alert = page.locator("#uploadStatus [role=alert]")
+    alert.wait_for()
+    assert "faltan columnas obligatorias" in alert.inner_text()
+
+
+def test_network_error_while_analyzing(page):
+    page.route("**/api/predict", lambda route: route.abort())
+    page.goto("/index.html")
+    page.locator("#sampleLabeled").click()
+    alert = page.locator("#uploadStatus [role=alert]")
+    alert.wait_for()
+    assert "No se pudo conectar con el servidor" in alert.inner_text()
+
+
+# Análisis inventado con un modelo que ya no está en GET /api/models y sin alertas críticas.
+RETIRED_MODEL_ANALYSIS = {
+    "analysis_id": "a3f9c2e17b4e",
+    "model": {"name": "removed_model", "display_name": "Modelo retirado", "threshold": 0.5},
+    "has_labels": True,
+    "summary": {"total_flows": 2, "alerts": 1, "alerts_by_severity": {"critical": 0, "high": 1, "medium": 0, "low": 0},
+                "detection_rate": 1.0, "false_alarm_rate": 0.0},
+    "flows": [
+        {"id": 7, "proto": "tcp", "service": "http", "state": "FIN", "attack_probability": 0.8, "is_alert": True,
+         "severity": "high", "predicted_attack_cat": "Exploits", "true_label": 1, "true_attack_cat": "Exploits"},
+        {"id": 9, "proto": "udp", "service": "dns", "state": "CON", "attack_probability": 0.1, "is_alert": False,
+         "severity": "normal", "predicted_attack_cat": None, "true_label": 0, "true_attack_cat": "Normal"},
+    ],
+}
+
+
+def test_unknown_model_and_empty_severity_filter(page):
+    page.route("**/api/analysis/a3f9c2e17b4e", lambda route: route.fulfill(json=RETIRED_MODEL_ANALYSIS))
+    page.goto("/index.html?analysis=a3f9c2e17b4e")
+    page.locator("#results").wait_for(state="visible")
+    # El modelo no está en la lista: su nombre, sin "Simulado" y sin aviso.
+    assert "Modelo retirado" in page.locator("#analysisBar").inner_text()
+    assert page.locator("#analysisBar .tag-mock").count() == 0 and page.locator("#mockSlot").inner_text() == ""
+    # El filtro con 0 está activo, el teclado no se lo salta y muestra el estado vacío.
+    critical = page.locator('#filters [data-value="critical"]')
+    assert critical.is_enabled() and critical.locator(".chip-n").inner_text() == "0"
+    page.locator('#filters [data-value="alerts"]').focus()
+    page.keyboard.press("ArrowRight")
+    assert critical.get_attribute("aria-checked") == "true"
+    assert "No hay alertas de severidad crítica en este análisis." in page.locator("#queueEmpty").inner_text()
+    page.get_by_role("button", name="Ver todas las alertas").click()
+    assert queue_ids(page) == [7]
+
+
+@pytest.mark.parametrize("width", [320, 375])
+def test_console_fits_small_screens(page, width):
+    page.set_viewport_size({"width": width, "height": 800})
+    load_sample(page)
+    page.locator("#queueTable tbody tr").first.click()
+    page.locator(".expl-list li").first.wait_for()
+    assert page.evaluate("document.documentElement.scrollWidth") <= width
