@@ -3,8 +3,8 @@
 import {
   ALERT_SEVERITIES, ApiError, SEVERITIES, attackType, errorNotice, fetchAnalysis, flowLink,
   formatInt, formatPercent, getChosenModel, h, icon, initPage, initRadioGroup, isMockModel,
-  isSampleAnalysis, mockNotice, modelName, networkError, openFlowPanel, sampleAnalysisId,
-  severityBadge, simulationUrl, formatDecimal,
+  isSampleAnalysis, kpiCard, mockNotice, modelName, networkError, openFlowPanel, rateTips,
+  sampleAnalysisId, severityBadge, simulationUrl, formatDecimal,
 } from './common.js';
 
 // Pausa entre flujos a velocidad 1×, en ms (contrato, sección 8: 1 segundo dividido entre speed).
@@ -335,7 +335,7 @@ async function finish() {
   announce();
   try {
     const analysis = await fetchAnalysis(state.analysisId);
-    renderKpis(analysis.summary);
+    renderKpis(analysis);
   } catch (error) {
     $('simStatus').replaceChildren(errorNotice(error));
   }
@@ -403,32 +403,28 @@ function resetProgress() {
 
 // ---------- Indicadores, progreso, registro y última alerta ----------
 
-function kpi({ label, value, sub = null, sev = null, labeled = false }) {
-  const missing = value === null;
-  return h('div', { class: 'kpi' + (sev ? ' sev sev-' + sev : '') + (labeled ? ' kpi-labeled' : '') },
-    h('span', { class: 'kpi-label' }, sev ? icon(SEVERITIES[sev].icon) : null, label),
-    h('span', { class: 'kpi-value' + (missing ? ' is-na' : '') }, missing ? '—' : value),
-    sub ? h('span', { class: 'kpi-sub' }, sub) : null);
-}
+const kpi = kpiCard;
 
-// summary solo llega al terminar, con las tasas del análisis completo.
-function renderKpis(summary = null) {
+// finished solo llega al terminar: el análisis completo, con sus tasas y sus flujos.
+function renderKpis(finished = null) {
   const counts = state.counts || emptyCounts();
   const labels = state.analysis ? state.analysis.has_labels : true;
-  const rate = (key, label, ok, emptyText) => {
-    if (!summary) return kpi({ label, labeled: true, value: null, sub: 'Se calcula al terminar' });
-    const value = summary[key];
+  const tips = finished && labels ? rateTips(finished.flows) : null;
+  const rate = (key, label, ok, emptyText, tipKey, tipSide) => {
+    if (!finished) return kpi({ label, labeled: true, value: null, sub: 'Se calcula al terminar' });
+    const value = finished.summary[key];
     return kpi({
       label, labeled: true, value: value === null ? null : formatPercent(value),
       sub: !labels ? 'Requiere etiquetas reales' : value === null ? emptyText : ok,
+      tip: tips && value !== null ? tips[tipKey] : null, tipSide,
     });
   };
   $('kpis').replaceChildren(
     kpi({ label: 'Flujos recibidos', value: formatInt(state.shown), sub: 'de ' + formatInt(state.total) }),
     kpi({ label: 'Alertas', value: formatInt(counts.alerts) }),
     ...ALERT_SEVERITIES.map((sev) => kpi({ label: SEVERITIES[sev].label, value: formatInt(counts[sev]), sev })),
-    rate('detection_rate', 'Detección', 'de los ataques reales', 'No hay ataques reales en el archivo'),
-    rate('false_alarm_rate', 'Falsas alarmas', 'de los flujos normales', 'No hay flujos normales en el archivo'));
+    rate('detection_rate', 'Detección', 'de los ataques reales', 'No hay ataques reales en el archivo', 'detection', 'start'),
+    rate('false_alarm_rate', 'Falsas alarmas', 'de los flujos normales', 'No hay flujos normales en el archivo', 'falseAlarm', 'end'));
 }
 
 function renderProgress() {

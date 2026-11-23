@@ -57,7 +57,10 @@ Estas reglas valen para todas las secciones siguientes.
 
 ### Números
 
-- **Probabilidades y métricas:** van de 0 a 1, nunca en porcentaje (`0.95`, no `95`). El frontend las convierte a porcentaje al mostrarlas.
+- **Probabilidades y métricas:** van de 0 a 1, nunca en porcentaje (`0.95`, no `95`).
+- **Cómo las muestra el frontend:** hay dos tipos.
+  - **Probabilidades y tasas** (detección, falsas alarmas, precisión, recall y exactitud): en porcentaje con un decimal. Por ejemplo, `0.964` se muestra "96,4%".
+  - **Puntajes** (F1, PR-AUC, ROC-AUC y F1 macro): como decimal con tres cifras, como se reportan en la literatura. Por ejemplo, `0.987` se muestra "0,987".
 - **Sin redondear:** el backend no redondea; el frontend redondea solo al mostrar.
 - **Cálculos que no se repiten:** la alerta y la severidad las calcula solo el backend. El frontend las muestra tal como llegan y nunca las recalcula a partir de la probabilidad.
 

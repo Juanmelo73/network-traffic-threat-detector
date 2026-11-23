@@ -4,8 +4,8 @@
 import {
   ALERT_SEVERITIES, SEVERITIES, attackType, closeFlowPanel, copyLink, errorNotice, featureName,
   fetchAnalysis, flowResult, formatDecimal, formatInt, formatPercent, getChosenModel, h, icon,
-  initPage, initRadioGroup, isMockModel, isSampleAnalysis, mockNotice, modelName, openFlowPanel, predict,
-  probability, severityBadge,
+  initPage, initRadioGroup, isMockModel, isSampleAnalysis, kpiCard, mockNotice, modelName, openFlowPanel,
+  predict, probability, rateTips, severityBadge,
 } from './common.js';
 
 const PAGE_SIZE = 25;
@@ -40,6 +40,37 @@ function setUrl({ analysis = null, flow = null }) {
   window.history.replaceState(null, '', 'index.html' + (query ? '?' + query : ''));
 }
 
+// ---------- Último análisis de la pestaña ----------
+
+// La consola recuerda su último análisis en sessionStorage (memoria de la pestaña, se borra al
+// cerrarla), para mostrarlo de nuevo al volver por el menú o el logo, que abren index.html sin
+// ?analysis=. Si el navegador bloquea el almacenamiento, la consola abre vacía.
+const LAST_ANALYSIS_KEY = 'ntd-console-analysis';
+
+function readLastAnalysis() {
+  try {
+    return JSON.parse(window.sessionStorage.getItem(LAST_ANALYSIS_KEY)) || null;
+  } catch {
+    return null;
+  }
+}
+
+function saveLastAnalysis(analysisId, fileName) {
+  try {
+    window.sessionStorage.setItem(LAST_ANALYSIS_KEY, JSON.stringify({ analysisId, fileName }));
+  } catch {
+    // Sin almacenamiento: al volver por el menú la consola abre vacía.
+  }
+}
+
+function forgetLastAnalysis() {
+  try {
+    window.sessionStorage.removeItem(LAST_ANALYSIS_KEY);
+  } catch {
+    // Nada que borrar.
+  }
+}
+
 // ---------- Carga ----------
 
 function setBusy(busy) {
@@ -64,6 +95,7 @@ async function analyze({ file = null, useSample = false, useLabels = true }) {
         formatInt(analysis.summary.total_flows) + ' flujos analizados, ' + formatInt(analysis.summary.alerts) + ' alertas.')));
     showAnalysis(analysis);
     setUrl({ analysis: analysis.analysis_id });
+    saveLastAnalysis(analysis.analysis_id, state.fileName);
   } catch (error) {
     $('uploadStatus').replaceChildren(errorNotice(error));
   } finally {
@@ -71,14 +103,21 @@ async function analyze({ file = null, useSample = false, useLabels = true }) {
   }
 }
 
+// Abre un análisis ya hecho: por enlace (?analysis=) o el último de la pestaña.
 async function loadFromLink(analysisId, flowParam) {
   setBusy(true);
+  // El nombre del archivo solo lo conoce esta pestaña: se recupera si es el mismo análisis.
+  const last = readLastAnalysis();
+  state.fileName = last && last.analysisId === analysisId ? last.fileName : null;
   try {
     const analysis = await fetchAnalysis(analysisId);
     $('uploadStatus').replaceChildren();
     showAnalysis(analysis);
+    setUrl({ analysis: analysisId });
+    saveLastAnalysis(analysisId, state.fileName);
     if (flowParam !== null) openFromLink(flowParam);
   } catch (error) {
+    if (error.code === 'analysis_not_found' && last && last.analysisId === analysisId) forgetLastAnalysis();
     $('uploadStatus').replaceChildren(errorNotice(error));
   } finally {
     setBusy(false);
@@ -160,27 +199,24 @@ function renderBar() {
         icon('activity'), 'Simular este análisis')));
 }
 
-function kpi({ label, value, sub = null, sev = null, labeled = false }) {
-  const missing = value === null;
-  return h('div', { class: 'kpi' + (sev ? ' sev sev-' + sev : '') + (labeled ? ' kpi-labeled' : '') },
-    h('span', { class: 'kpi-label' }, sev ? icon(SEVERITIES[sev].icon) : null, label),
-    h('span', { class: 'kpi-value' + (missing ? ' is-na' : '') }, missing ? '—' : value),
-    sub ? h('span', { class: 'kpi-sub' }, sub) : null);
-}
+const kpi = kpiCard;
 
 function renderKpis() {
-  const { summary, has_labels: labels } = state.analysis;
-  const rate = (value, label, ok, emptyText) => kpi({
+  const { summary, has_labels: labels, flows } = state.analysis;
+  const tips = labels ? rateTips(flows) : null;
+  // Con etiquetas y valor, la ayuda dice sobre qué flujos se calcula la tasa.
+  const rate = (value, label, ok, emptyText, tip, tipSide) => kpi({
     label, labeled: true,
     value: value === null ? null : formatPercent(value),
     sub: !labels ? 'Requiere etiquetas reales' : value === null ? emptyText : ok,
+    tip: labels && value !== null ? tip : null, tipSide,
   });
   $('kpis').replaceChildren(
     kpi({ label: 'Flujos analizados', value: formatInt(summary.total_flows) }),
     kpi({ label: 'Alertas', value: formatInt(summary.alerts), sub: 'de ' + formatInt(summary.total_flows) + ' flujos' }),
     ...ALERT_SEVERITIES.map((sev) => kpi({ label: SEVERITIES[sev].label, value: formatInt(summary.alerts_by_severity[sev]), sev })),
-    rate(summary.detection_rate, 'Detección', 'de los ataques reales', 'No hay ataques reales en el archivo'),
-    rate(summary.false_alarm_rate, 'Falsas alarmas', 'de los flujos normales', 'No hay flujos normales en el archivo'));
+    rate(summary.detection_rate, 'Detección', 'de los ataques reales', 'No hay ataques reales en el archivo', tips?.detection, 'start'),
+    rate(summary.false_alarm_rate, 'Falsas alarmas', 'de los flujos normales', 'No hay flujos normales en el archivo', tips?.falseAlarm, 'end'));
 }
 
 // ---------- Cola de alertas ----------
@@ -348,7 +384,13 @@ async function start() {
   state.models = await initPage();
   const params = new URLSearchParams(window.location.search);
   const analysisId = params.get('analysis');
-  if (analysisId) loadFromLink(analysisId, params.get('flow'));
+  if (analysisId) {
+    loadFromLink(analysisId, params.get('flow'));
+  } else {
+    // Sin ?analysis= (menú o logo): el último análisis de esta pestaña, si hay.
+    const last = readLastAnalysis();
+    if (last && last.analysisId) loadFromLink(last.analysisId, null);
+  }
 }
 
 start();

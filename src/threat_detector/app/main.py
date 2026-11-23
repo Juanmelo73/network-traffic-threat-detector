@@ -40,6 +40,15 @@ def create_app(artifacts_dir=ARTIFACTS_DIR):
 
     app = FastAPI(title="Network Traffic Threat Detector", lifespan=lifespan)
     app.include_router(router)
+
+    @app.middleware("http")
+    async def revalidate_every_time(request: Request, call_next):
+        # Sin Cache-Control, el navegador decide por su cuenta cuánto reutilizar su copia de un
+        # archivo, y puede seguir usando una versión vieja de la interfaz (comprobado con Chromium).
+        # Con no-cache pregunta siempre si cambió; si no cambió, la respuesta es un 304 sin cuerpo.
+        response = await call_next(request)
+        response.headers.setdefault("Cache-Control", "no-cache")
+        return response
     # Los archivos de static/ (páginas, estilos, scripts y sample_flows.csv). FastAPI revisa primero
     # las rutas de la API. Con fallback=None, una dirección que no existe da not_found en vez de
     # devolver index.html.

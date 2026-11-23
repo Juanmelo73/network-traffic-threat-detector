@@ -1,5 +1,6 @@
 """Pruebas de la app: predictores, análisis en memoria, rutas de la API (con TestClient), frontend y contraste de styles.css."""
 
+import copy
 import json
 import logging
 import re
@@ -596,6 +597,15 @@ def test_static_files_are_served_after_the_api(client):
     assert client.get("/api/models").status_code == 200
 
 
+def test_responses_ask_the_browser_to_revalidate(client):
+    # Así una versión nueva de la interfaz llega al navegador sin recarga forzada.
+    for path in ("/index.html", "/js/common.js", "/styles.css", "/assets/icons.svg", "/api/models"):
+        assert client.get(path).headers["cache-control"] == "no-cache", path
+    # Si el archivo no cambió, la revalidación responde 304 sin volver a enviarlo.
+    etag = client.get("/js/analysis.js").headers["etag"]
+    assert client.get("/js/analysis.js", headers={"If-None-Match": etag}).status_code == 304
+
+
 def test_damaged_form_is_an_invalid_request(client):
     response = client.post("/api/predict", content=b"not multipart",
                            headers={"content-type": "multipart/form-data; boundary=xyz"})
@@ -1122,9 +1132,39 @@ def test_console_with_the_labeled_sample(page):
     assert queue_ids(page) == expected
 
 
+def rate_tip_texts(flows):
+    """Lo que debe decir la ayuda de Detección y de Falsas alarmas."""
+    attacks = [f for f in flows if f["true_label"] == 1]
+    normals = [f for f in flows if f["true_label"] == 0]
+    detected = sum(f["is_alert"] for f in attacks)
+    false_alarms = sum(f["is_alert"] for f in normals)
+    return (f"{detected} de {len(attacks)} ataques reales dieron alerta.",
+            f"{false_alarms} de {len(normals)} flujos normales dieron alerta.")
+
+
+def test_rate_tips_say_which_flows_each_rate_uses(page):
+    load_sample(page)
+    detection_tip, false_alarm_tip = rate_tip_texts(api_json(page, "/api/analysis/sample-mock")["flows"])
+    cards = page.locator(".kpi.has-tip")
+    assert cards.count() == 2
+    for card, expected in zip(cards.all(), (detection_tip, false_alarm_tip)):
+        tip = card.locator(".kpi-tip")
+        assert tip.is_hidden()
+        card.hover()
+        assert tip.is_visible() and tip.inner_text().startswith(expected)
+        assert "no suman 100 %" in tip.inner_text()
+        # Los lectores de pantalla la leen como descripción del indicador.
+        assert card.get_attribute("aria-describedby") == tip.get_attribute("id")
+    # Con el teclado también aparece.
+    page.mouse.move(0, 0)
+    cards.first.focus()
+    assert cards.first.locator(".kpi-tip").is_visible()
+
+
 def test_console_with_the_unlabeled_sample(page):
     load_sample(page, labeled=False)
     assert page.locator("#kpis").inner_text().count("Requiere etiquetas reales") == 2
+    assert page.locator(".kpi.has-tip").count() == 0
     assert "Clase real" not in page.locator("#queueTable thead").inner_text()
     assert "Sin etiquetas" in page.locator("#analysisBar").inner_text()
 
@@ -1198,6 +1238,31 @@ def test_uploaded_files(page):
     alert = page.locator("#uploadStatus [role=alert]")
     alert.wait_for()
     assert "faltan columnas obligatorias" in alert.inner_text()
+
+
+def test_console_remembers_its_analysis_when_coming_back(page):
+    page.goto("/index.html")
+    page.locator("#fileInput").set_input_files(str(DEMO_SAMPLE_CSV))
+    page.locator("#results").wait_for(state="visible")
+    analysis_url = page.url
+    # Volver por el menú y por el logo, que abren index.html sin ?analysis=.
+    for back in (page.locator(".mainnav a", has_text="Consola"), page.locator(".brand")):
+        page.locator(".mainnav a", has_text="Modelos").click()
+        page.wait_for_url("**/compare.html")
+        back.click()
+        page.locator("#results").wait_for(state="visible")
+        assert page.url == analysis_url
+        assert "sample_flows.csv" in page.locator("#analysisBar").inner_text()
+    # Si el análisis guardado ya no existe: el mensaje del contrato, y se olvida.
+    page.evaluate("sessionStorage.setItem('ntd-console-analysis', JSON.stringify({analysisId: 'a3f9c2e17b4f', fileName: 'viejo.csv'}))")
+    page.goto("/index.html")
+    alert = page.locator("#uploadStatus [role=alert]")
+    alert.wait_for()
+    assert "Este análisis ya no está disponible" in alert.inner_text()
+    assert page.evaluate("sessionStorage.getItem('ntd-console-analysis')") is None
+    page.goto("/index.html")
+    page.wait_for_timeout(300)
+    assert page.locator("#uploadStatus [role=alert]").count() == 0 and page.locator("#results").is_hidden()
 
 
 def test_network_error_while_analyzing(page):
@@ -1308,6 +1373,10 @@ def test_full_simulation_matches_the_analysis(page, monkeypatch):
     visible = page.locator("#logList li:visible")
     assert visible.count() == page.locator("#logList li.is-alert").count() > 0
     assert "simulación terminada" in page.locator("#simLive").inner_text()
+    # Al terminar, las tasas llevan la ayuda con sus cuentas.
+    detection_tip, _ = rate_tip_texts(api_json(page, "/api/analysis/sample-mock")["flows"])
+    page.locator(".kpi.has-tip").first.hover()
+    assert page.locator(".kpi.has-tip .kpi-tip").first.inner_text().startswith(detection_tip)
 
 
 def test_pause_resume_and_speed(page, monkeypatch):
@@ -1366,7 +1435,11 @@ def test_hidden_tab_applies_flows_without_animating(page, monkeypatch):
     page.wait_for_timeout(800)
     assert page.evaluate("window.dotsCreated") == before_dots
     assert shown(page) > before_shown
-    assert page.locator("#kpis").inner_text().count(str(shown(page))) >= 1
+    # Progreso e indicador de flujos recibidos, leídos en el mismo instante: coinciden.
+    progress, received = page.evaluate("""() => [
+        parseInt(document.getElementById('progressText').textContent),
+        parseInt(document.querySelector('#kpis .kpi-value').textContent)]""")
+    assert progress == received
     # Al volver a la pestaña, la animación sigue con los flujos nuevos.
     page.evaluate(set_visibility, "visible")
     page.wait_for_function(f"window.dotsCreated > {before_dots}")
@@ -1408,4 +1481,131 @@ def test_simulation_fits_small_screens(page, monkeypatch, width):
     open_simulation(page)
     page.locator("#playBtn").click()
     page.locator("#logList .tl-btn").first.wait_for()
+    assert page.evaluate("document.documentElement.scrollWidth") <= width
+
+
+
+# Modelos (compare.html y js/compare.js)
+
+
+def score(value):
+    """Un puntaje como lo muestra la pantalla (3 decimales, coma)."""
+    return f"{value:.3f}".replace(".", ",")
+
+
+def thousands(n):
+    return f"{n:,}".replace(",", ".")
+
+
+def open_models(page):
+    page.goto("/compare.html")
+    page.locator("#modelsContent").wait_for(state="visible")
+
+
+def compare_row(page, row_label):
+    """La fila de la comparación cuya etiqueta es exactamente row_label."""
+    label = page.locator("td:first-child", has_text=re.compile("^" + re.escape(row_label) + "$"))
+    return page.locator("#compareTable tbody tr", has=label)
+
+
+def compare_cells(page, row_label):
+    """Los valores de una fila de la comparación, uno por modelo."""
+    return compare_row(page, row_label).locator("td").all_inner_texts()[1:]
+
+
+def test_models_page_with_the_mock_model(page):
+    open_models(page)
+    metrics = api_json(page, "/api/metrics")["models"][0]
+    d = metrics["detection"]
+    assert page.locator(".model-card").count() == 1
+    card = page.locator(".model-card")
+    assert "Simulado" in card.inner_text() and "Métricas inventadas." in card.inner_text()
+    assert "En uso en la consola y la simulación" in card.inner_text()
+    assert compare_cells(page, "Detección") == [percent(d["detection_rate"])]
+    assert compare_cells(page, "PR-AUC") == [score(d["pr_auc"])]
+    assert compare_cells(page, "F1 macro (9 tipos)") == [score(metrics["attack_type"]["macro_f1"])]
+    assert compare_cells(page, "Tiempo de entrenamiento") == ["No aplica"]
+    assert page.locator("#compareTable .best").count() == 0
+    assert "al menos dos modelos entrenados" in page.locator("#bestNote").inner_text()
+    assert "(82.332 flujos)" in page.locator("#testFlows").inner_text()
+    matrix = metrics["attack_type"]["confusion"]["matrix"]
+    cells = page.locator(".cm9 tbody td").all_inner_texts()
+    assert cells == [thousands(v) for row in matrix for v in row]
+    assert page.locator(".cm9 td.diag").count() == 9
+    assert "detectar al menos el 95 % de los ataques" in page.locator("#tabPanel").inner_text()
+    assert "No aplica: el modelo simulado no se entrena." in page.locator("#tabPanel").inner_text()
+
+
+def fake_models_and_metrics(page):
+    """El simulado más dos modelos entrenados inventados, a partir de las respuestas reales."""
+    models = api_json(page, "/api/models")
+    mock_metrics = api_json(page, "/api/metrics")["models"][0]
+    complexity = {"training_seconds": 134.2, "training_flows": 140273, "prediction_ms_per_1000_flows": 4.1,
+                  "model_size_mb": 3.8, "hardware": "Equipo de prueba"}
+    entries = [("model_a", "Modelo A", 0.96, 0.10, None), ("model_b", "Modelo B", 0.95, 0.10, 0.9)]
+    for name, display, detection, false_alarm, precision in entries:
+        models["models"].append({**models["models"][0], "name": name, "display_name": display, "is_mock": False,
+                                 "use_ttl": name == "model_a"})
+    metrics = {"models": []}
+    for model in models["models"]:
+        entry = copy.deepcopy(mock_metrics)
+        entry.update(name=model["name"], display_name=model["display_name"], is_mock=model["is_mock"])
+        if not model["is_mock"]:
+            _, _, detection, false_alarm, precision = next(e for e in entries if e[0] == model["name"])
+            entry["detection"].update(detection_rate=detection, false_alarm_rate=false_alarm, precision=precision)
+            entry["complexity"] = complexity
+        else:
+            # El simulado tiene el valor más alto, pero nunca se marca como mejor.
+            entry["detection"]["detection_rate"] = 0.99
+        metrics["models"].append(entry)
+    page.route("**/api/models", lambda route: route.fulfill(json=models))
+    page.route("**/api/metrics", lambda route: route.fulfill(json=metrics))
+
+
+def test_best_values_and_choosing_a_model(page):
+    page.goto("/compare.html")
+    fake_models_and_metrics(page)
+    open_models(page)
+    columns = ["mock", "model_a", "model_b"]
+    best = lambda label: [columns[i] for i, td in enumerate(compare_row(page, label).locator("td").all()[1:])
+                          if "best" in (td.get_attribute("class") or "")]
+    assert best("Detección") == ["model_a"]
+    assert best("Falsas alarmas") == ["model_a", "model_b"]
+    assert best("Precisión") == ["model_b"]
+    assert compare_cells(page, "Precisión")[1] == "—"
+    assert "La estrella marca el mejor valor" in page.locator("#bestNote").inner_text()
+    # Elegir el modelo B: se guarda, cambia la cabecera y la tarjeta, y sigue elegido al recargar.
+    card_b = page.locator(".model-card", has_text="Modelo B")
+    card_b.get_by_role("button", name="Usar este modelo").click()
+    assert page.evaluate("localStorage.getItem('ntd-model')") == "model_b"
+    assert "Modelo B" in page.locator("#modelPill").inner_text()
+    assert "is-active" in card_b.get_attribute("class")
+    assert "Ahora la consola y la simulación usan «Modelo B»" in page.locator("#toast").inner_text()
+    page.reload()
+    page.locator("#modelsContent").wait_for(state="visible")
+    assert "is-active" in page.locator(".model-card", has_text="Modelo B").get_attribute("class")
+    # Pestañas con el teclado: empieza en el modelo en uso.
+    assert page.locator("#tab-model_b").get_attribute("aria-selected") == "true"
+    page.locator("#tab-model_b").focus()
+    page.keyboard.press("ArrowLeft")
+    assert page.locator("#tab-model_a").get_attribute("aria-selected") == "true"
+    assert page.locator("#tabPanel").get_attribute("aria-labelledby") == "tab-model_a"
+    assert "2 min 14 s" in page.locator("#tabPanel").inner_text()
+
+
+def test_models_page_error(page):
+    page.route("**/api/metrics", lambda route: route.fulfill(status=500, json={"error": {
+        "code": "internal_error", "message": "Ocurrió un error inesperado en el servidor. Intenta de nuevo; si se repite, avisa al equipo.",
+        "details": None}}))
+    page.goto("/compare.html")
+    alert = page.locator("#modelsStatus [role=alert]")
+    alert.wait_for()
+    assert "Ocurrió un error inesperado" in alert.inner_text()
+    assert page.get_by_role("button", name="Reintentar").is_visible()
+
+
+@pytest.mark.parametrize("width", [320, 375])
+def test_models_page_fits_small_screens(page, width):
+    page.set_viewport_size({"width": width, "height": 800})
+    open_models(page)
     assert page.evaluate("document.documentElement.scrollWidth") <= width

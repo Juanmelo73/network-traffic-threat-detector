@@ -59,7 +59,33 @@
       </div>
     </div>
     <div id="pageStatus"></div>
-    <div id="screen" class="stack"></div>
+    <div id="screen" class="stack">
+      <div id="modelsStatus"></div>
+      <div class="stack" id="modelsContent" hidden>
+        <div class="notice notice-info">
+          <svg class="icon" aria-hidden="true" focusable="false"><use href="assets/icons.svg#icon-info"/></svg>
+          <p><strong>Métricas oficiales:</strong> medidas sobre el conjunto de prueba completo<span id="testFlows"></span>. No dependen del archivo cargado en la consola.</p>
+        </div>
+
+        <h2 class="section-title">Modelos disponibles</h2>
+        <div class="model-cards" id="modelCards"></div>
+        <p class="help">La elección se guarda en este navegador. Los análisis nuevos usarán este modelo.</p>
+
+        <section class="card" aria-labelledby="h-compare">
+          <div class="card-head"><h2 id="h-compare">Comparación lado a lado</h2></div>
+          <div class="compare-wrap" tabindex="0" role="region" aria-labelledby="h-compare">
+            <table class="compare" id="compareTable"></table>
+          </div>
+          <p class="help" id="bestNote"></p>
+        </section>
+
+        <section class="card" aria-labelledby="h-detail">
+          <div class="card-head"><h2 id="h-detail">Detalle por modelo</h2></div>
+          <div class="tabs" role="tablist" aria-labelledby="h-detail" id="tabs"></div>
+          <div id="tabPanel" role="tabpanel"></div>
+        </section>
+      </div>
+    </div>
   </main>
 </body>
 </html>

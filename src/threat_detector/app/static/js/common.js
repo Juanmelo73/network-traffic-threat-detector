@@ -202,6 +202,10 @@ export function formatDecimal(x, digits = 2) {
   return new Intl.NumberFormat(LOCALE, { minimumFractionDigits: digits, maximumFractionDigits: digits }).format(x);
 }
 
+// Puntajes (F1, PR-AUC, ROC-AUC, F1 macro): decimal con 3 cifras, como en la literatura.
+// Las probabilidades y las tasas van en porcentaje con formatPercent.
+export const formatScore = (x) => (x === null || x === undefined ? '—' : formatDecimal(x, 3));
+
 export function formatSigned(x) {
   return (x >= 0 ? '+' : '−') + formatDecimal(Math.abs(x));
 }
@@ -279,6 +283,39 @@ export function flowResult(flow) {
   if (flow.is_alert) return h('span', { class: 'result bad' }, icon('x'), 'Falsa alarma');
   if (flow.true_label === 1) return h('span', { class: 'result bad' }, icon('x'), 'Ataque no detectado');
   return h('span', { class: 'result ok' }, icon('check'), 'Normal');
+}
+
+// Sobre qué flujos se calcula cada tasa (con etiquetas): detección sobre los ataques reales y
+// falsas alarmas sobre los normales. Solo cuenta flujos; las tasas salen del summary de la API.
+export function rateTips(flows) {
+  const attacks = flows.filter((f) => f.true_label === 1);
+  const normals = flows.filter((f) => f.true_label === 0);
+  const alerts = (list) => list.filter((f) => f.is_alert).length;
+  const note = ' Por eso Detección y Falsas alarmas no suman 100 %.';
+  return {
+    detection: formatInt(alerts(attacks)) + ' de ' + formatInt(attacks.length)
+      + ' ataques reales dieron alerta. Se calcula solo sobre los ataques reales.' + note,
+    falseAlarm: formatInt(alerts(normals)) + ' de ' + formatInt(normals.length)
+      + ' flujos normales dieron alerta. Se calcula solo sobre los flujos normales.' + note,
+  };
+}
+
+// Indicador: etiqueta, valor y nota. Con tip, el recuadro de ayuda aparece al pasar el mouse, con
+// el foco del teclado o al tocarlo; los lectores de pantalla lo leen como descripción.
+// tipSide: 'start' o 'end', el borde del indicador al que se alinea la ayuda.
+let tipCount = 0;
+export function kpiCard({ label, value, sub = null, sev = null, labeled = false, tip = null, tipSide = 'start' }) {
+  const missing = value === null;
+  const tipId = tip ? 'kpi-tip-' + (tipCount += 1) : null;
+  return h('div', {
+    class: 'kpi' + (sev ? ' sev sev-' + sev : '') + (labeled ? ' kpi-labeled' : '') + (tip ? ' has-tip tip-' + tipSide : ''),
+    tabindex: tip ? '0' : null, 'aria-describedby': tipId,
+  },
+  h('span', { class: 'kpi-label' }, sev ? icon(SEVERITIES[sev].icon) : null, label,
+    tip ? icon('info', { size: 'sm' }) : null),
+  h('span', { class: 'kpi-value' + (missing ? ' is-na' : '') }, missing ? '—' : value),
+  sub ? h('span', { class: 'kpi-sub' }, sub) : null,
+  tip ? h('span', { class: 'kpi-tip', id: tipId, role: 'tooltip' }, tip) : null);
 }
 
 // ---------- Avisos ----------

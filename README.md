@@ -13,7 +13,7 @@ Para cada flujo de un archivo CSV, el sistema calcula:
 - el **tipo de ataque más probable** entre los 9 del dataset;
 - cuando el modelo lo permite, la **contribución de cada variable** a la decisión.
 
-La interfaz web tendrá tres pantallas: la **consola**, con la cola de alertas y filtros por severidad; **Simulación**, que reproduce los flujos uno a uno; y **Modelos**, que compara las métricas de los modelos y permite elegir cuál usar.
+La interfaz web tiene tres pantallas: la **consola**, con la cola de alertas y filtros por severidad; **Simulación**, que reproduce un análisis flujo a flujo con una animación; y **Modelos**, que compara las métricas de los modelos y permite elegir cuál usar. Funciona en modo claro y oscuro, en computador y en celular.
 
 ## Estructura del proyecto
 
@@ -29,6 +29,7 @@ network-traffic-threat-detector/
 ├── notebooks/                Exploración de los datos y pruebas de cada parte del código
 ├── artifacts/                Modelos exportados, registro de modelos y figuras
 ├── docs/contracts.md         Contratos entre las partes: API web y formato de los modelos exportados
+├── docs/design/              Guía de diseño de la interfaz: colores, tipografía, componentes e íconos
 ├── pyproject.toml, uv.lock   Definición del proyecto y versiones exactas de las dependencias
 ├── requirements-prod.txt     Dependencias de la aplicación
 └── requirements.txt          Dependencias de desarrollo (incluye las de la aplicación)
@@ -64,6 +65,8 @@ uv run python -c "from threat_detector.dataset import load_train; print(len(load
 
 Para los notebooks, se elige como kernel el entorno `.venv` del proyecto.
 
+Las pruebas se corren con `uv run pytest`. Las de la interfaz usan un navegador; se instala una vez con `uv run playwright install --with-deps chromium` (pide la contraseña de `sudo` para las librerías del sistema). Sin ese navegador, esas pruebas se saltan solas.
+
 ## Datos
 
 Los CSV de UNSW-NB15 no están en el repositorio. [data/README.md](data/README.md) explica de dónde descargarlos, dónde copiarlos (`data/raw/`), qué contiene cada archivo y cómo citar el dataset.
@@ -94,8 +97,9 @@ Terminado:
 6. **Artefactos:** exportación, registro y carga de los modelos, y un modelo simulado que permite programar la aplicación antes de tener modelos reales.
 7. **Pruebas automatizadas** con pytest (`uv run pytest`).
 8. **Backend:** API con FastAPI que analiza archivos CSV, explica la decisión sobre cada flujo, entrega los modelos y sus métricas, y reproduce un análisis flujo por flujo. Por ahora usa el modelo simulado.
+9. **Frontend:** consola, simulación con animación y comparación de modelos, en HTML, CSS y JavaScript sin frameworks, en modo claro y oscuro.
 
-Pendiente: el frontend (HTML, CSS y JavaScript) y el entrenamiento y la evaluación de los modelos.
+Pendiente: el entrenamiento y la evaluación de los modelos reales.
 
 ## Autores
 
