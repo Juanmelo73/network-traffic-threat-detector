@@ -13,7 +13,7 @@ Para cada flujo de un archivo CSV, el sistema calcula:
 - el **tipo de ataque más probable** entre los 9 del dataset;
 - cuando el modelo lo permite, la **contribución de cada variable** a la decisión.
 
-La interfaz web tendrá tres pantallas: **Análisis**, una consola de alertas con filtros por severidad; **Simulación**, que reproduce los flujos uno a uno; y **Modelos**, que compara las métricas de los modelos y permite elegir cuál usar.
+La interfaz web tiene tres pantallas: la **consola**, con la cola de alertas y filtros por severidad; **Simulación**, que reproduce un análisis flujo a flujo con una animación; y **Modelos**, que compara las métricas de los modelos y permite elegir cuál usar. Funciona en modo claro y oscuro, en computador y en celular.
 
 ## Estructura del proyecto
 
@@ -24,11 +24,12 @@ network-traffic-threat-detector/
 │   ├── dataset.py            Columnas del dataset, carga y validación de flujos, muestra de demostración
 │   ├── artifacts.py          Carga de los modelos y reglas para leer su salida (alerta, severidad, tipo)
 │   ├── ml/                   Preparación de datos, umbral, métricas y exportación de modelos
-│   └── app/static/           Archivos de la interfaz web (por ahora, la muestra de demostración)
+│   └── app/                  Aplicación web: API con FastAPI y, en static/, los archivos de la interfaz
 ├── data/                     Dataset: los CSV no están en el repositorio (ver data/README.md)
 ├── notebooks/                Exploración de los datos y pruebas de cada parte del código
 ├── artifacts/                Modelos exportados, registro de modelos y figuras
 ├── docs/contracts.md         Contratos entre las partes: API web y formato de los modelos exportados
+├── docs/design/              Guía de diseño de la interfaz: colores, tipografía, componentes e íconos
 ├── pyproject.toml, uv.lock   Definición del proyecto y versiones exactas de las dependencias
 ├── requirements-prod.txt     Dependencias de la aplicación
 └── requirements.txt          Dependencias de desarrollo (incluye las de la aplicación)
@@ -64,11 +65,25 @@ uv run python -c "from threat_detector.dataset import load_train; print(len(load
 
 Para los notebooks, se elige como kernel el entorno `.venv` del proyecto.
 
+Las pruebas se corren con `uv run pytest`. Las de la interfaz usan un navegador; se instala una vez con `uv run playwright install --with-deps chromium` (pide la contraseña de `sudo` para las librerías del sistema). Sin ese navegador, esas pruebas se saltan solas.
+
 ## Datos
 
 Los CSV de UNSW-NB15 no están en el repositorio. [data/README.md](data/README.md) explica de dónde descargarlos, dónde copiarlos (`data/raw/`), qué contiene cada archivo y cómo citar el dataset.
 
 La muestra de demostración de la aplicación (`src/threat_detector/app/static/sample_flows.csv`, 500 flujos) sí está en el repositorio.
+
+## Arrancar la aplicación
+
+Desde la raíz del repositorio:
+
+```bash
+uv run fastapi dev
+```
+
+La aplicación queda en http://127.0.0.1:8000 y se reinicia sola al guardar cambios en el código. La documentación interactiva de la API está en http://127.0.0.1:8000/docs. Se detiene con Ctrl+C.
+
+Al arrancar, la aplicación carga los modelos de `artifacts/`. Si alguno falta o está dañado, no arranca, y el mensaje dice cuál es el problema.
 
 ## Estado actual
 
@@ -80,8 +95,11 @@ Terminado:
 4. **Preprocesamiento:** validación de los flujos y tres métodos de preparación: M1 sin escalar, M2 con estandarización y M3 sin las variables de TTL.
 5. **Umbral y métricas:** umbral de alerta calculado con la validación (detección mínima del 95 %), severidad y métricas de evaluación.
 6. **Artefactos:** exportación, registro y carga de los modelos, y un modelo simulado que permite programar la aplicación antes de tener modelos reales.
+7. **Pruebas automatizadas** con pytest (`uv run pytest`).
+8. **Backend:** API con FastAPI que analiza archivos CSV, explica la decisión sobre cada flujo, entrega los modelos y sus métricas, y reproduce un análisis flujo por flujo. Por ahora usa el modelo simulado.
+9. **Frontend:** consola, simulación con animación y comparación de modelos, en HTML, CSS y JavaScript sin frameworks, en modo claro y oscuro.
 
-Pendiente: el entrenamiento y la evaluación de los modelos, el backend (API con FastAPI) y el frontend (HTML, CSS y JavaScript).
+Pendiente: el entrenamiento y la evaluación de los modelos reales.
 
 ## Autores
 

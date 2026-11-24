@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="es" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Simulación · Threat Detector</title>
+  <script>
+    // Aplica el modo claro u oscuro antes de pintar, para que no parpadee: el guardado o, si no
+    // hay, el del sistema.
+    (function () {
+      var theme = null;
+      try { theme = localStorage.getItem('ntd-theme'); } catch (e) {}
+      if (theme !== 'light' && theme !== 'dark') {
+        theme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+      }
+      document.documentElement.setAttribute('data-theme', theme);
+    })();
+  </script>
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="styles.css">
+  <script type="module" src="js/simulation.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Saltar al contenido</a>
+
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="brand" href="index.html" aria-label="Threat Detector, ir a la consola">
+        <svg class="brand-mark" viewBox="0 0 256 256" aria-hidden="true" focusable="false">
+          <path class="lg-ink" d="M120 23.1 L40 54 V122 C40 178 76 218 120 234.8 Z"/>
+          <rect class="lg-signal" x="136" y="40" width="34" height="34" rx="4"/>
+          <rect class="lg-signal" x="178" y="56" width="34" height="34" rx="4"/>
+          <rect class="lg-signal" x="136" y="82" width="34" height="34" rx="4"/>
+          <rect class="lg-signal" x="178" y="98" width="34" height="34" rx="4"/>
+          <rect class="lg-signal" x="136" y="124" width="34" height="34" rx="4"/>
+          <rect class="lg-signal" x="178" y="140" width="26" height="26" rx="4"/>
+          <rect class="lg-signal" x="136" y="166" width="34" height="34" rx="4"/>
+          <rect class="lg-signal" x="136" y="208" width="16" height="16" rx="4"/>
+        </svg>
+        <span class="brand-text">Threat Detector <small>UNSW-NB15</small></span>
+      </a>
+      <nav class="mainnav" aria-label="Principal">
+        <a href="index.html"><svg class="icon" aria-hidden="true" focusable="false"><use href="assets/icons.svg#icon-list"/></svg>Consola</a>
+        <a href="simulation.html" aria-current="page"><svg class="icon" aria-hidden="true" focusable="false"><use href="assets/icons.svg#icon-activity"/></svg>Simulación</a>
+        <a href="compare.html"><svg class="icon" aria-hidden="true" focusable="false"><use href="assets/icons.svg#icon-cpu"/></svg>Modelos</a>
+      </nav>
+      <div class="topbar-right">
+        <a class="model-pill" id="modelPill" href="compare.html" title="Cambiar de modelo" hidden></a>
+        <button type="button" class="icon-btn" id="themeToggle" aria-label="Cambiar a modo oscuro"></button>
+      </div>
+    </div>
+  </header>
+
+  <main id="main" tabindex="-1">
+    <div class="page-head">
+      <div>
+        <h1>Simulación</h1>
+        <p class="lede">Reproduce un análisis flujo a flujo, como si el tráfico llegara a la red.</p>
+      </div>
+      <span class="replay-tag"><svg class="icon" aria-hidden="true" focusable="false"><use href="assets/icons.svg#icon-activity"/></svg>Reproducción del análisis, no es tráfico en vivo</span>
+    </div>
+    <div id="pageStatus"></div>
+    <div id="screen" class="stack">
+      <div class="analysis-bar" id="analysisBar"></div>
+      <div id="mockSlot"></div>
+      <div id="simStatus"></div>
+
+      <section class="card sim-controls" aria-label="Controles de la simulación">
+        <div class="btn-row">
+          <button type="button" class="btn btn-primary" id="playBtn" disabled></button>
+          <button type="button" class="btn btn-secondary" id="resetBtn" disabled>
+            <svg class="icon" aria-hidden="true" focusable="false"><use href="assets/icons.svg#icon-rotate-ccw"/></svg>Reiniciar
+          </button>
+        </div>
+        <div class="btn-row">
+          <div class="segmented" role="radiogroup" aria-label="Velocidad" id="speeds">
+            <button type="button" role="radio" aria-checked="true" data-value="1">1×</button>
+            <button type="button" role="radio" aria-checked="false" data-value="2">2×</button>
+            <button type="button" role="radio" aria-checked="false" data-value="4">4×</button>
+          </div>
+          <span class="help" id="speedHelp"></span>
+        </div>
+        <div class="segmented" role="radiogroup" aria-label="Etiquetas de la muestra" id="labelsMode" hidden>
+          <button type="button" role="radio" aria-checked="true" data-value="labeled">Con etiquetas</button>
+          <button type="button" role="radio" aria-checked="false" data-value="unlabeled">Sin etiquetas</button>
+        </div>
+        <div class="sim-progress">
+          <div class="progress-label"><span>Progreso</span><span class="mono" id="progressText">0 / 0</span></div>
+          <div class="progress" id="progressBar" role="progressbar" aria-label="Progreso de la simulación" aria-valuemin="0" aria-valuemax="0" aria-valuenow="0"><span></span></div>
+        </div>
+      </section>
+
+      <section class="card stage" aria-label="Recorrido de los flujos">
+        <div id="stage" aria-hidden="true"></div>
+        <div class="legend" id="legend"></div>
+      </section>
+
+      <h2 class="section-title">Indicadores en vivo</h2>
+      <div class="kpis" id="kpis"></div>
+
+      <div class="sim-split">
+        <section class="card" aria-labelledby="h-log">
+          <div class="card-head">
+            <h2 id="h-log">Flujos recibidos <span class="muted">(últimos 50)</span></h2>
+            <label class="check"><input type="checkbox" id="onlyAlerts"> Mostrar solo alertas</label>
+          </div>
+          <ol class="timeline" id="logList" aria-labelledby="h-log"></ol>
+          <p class="empty" id="logEmpty">Pulsa <strong>Iniciar</strong> para reproducir los flujos del análisis.</p>
+        </section>
+        <section class="card last-alert" id="lastAlert" aria-label="Última alerta"></section>
+      </div>
+      <p class="sr-only" id="simLive" role="status"></p>
+    </div>
+  </main>
+</body>
+</html>

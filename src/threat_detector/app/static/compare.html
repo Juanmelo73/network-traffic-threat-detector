@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="es" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Modelos · Threat Detector</title>
+  <script>
+    // Aplica el modo claro u oscuro antes de pintar, para que no parpadee: el guardado o, si no
+    // hay, el del sistema.
+    (function () {
+      var theme = null;
+      try { theme = localStorage.getItem('ntd-theme'); } catch (e) {}
+      if (theme !== 'light' && theme !== 'dark') {
+        theme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+      }
+      document.documentElement.setAttribute('data-theme', theme);
+    })();
+  </script>
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="styles.css">
+  <script type="module" src="js/compare.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Saltar al contenido</a>
+
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="brand" href="index.html" aria-label="Threat Detector, ir a la consola">
+        <svg class="brand-mark" viewBox="0 0 256 256" aria-hidden="true" focusable="false">
+          <path class="lg-ink" d="M120 23.1 L40 54 V122 C40 178 76 218 120 234.8 Z"/>
+          <rect class="lg-signal" x="136" y="40" width="34" height="34" rx="4"/>
+          <rect class="lg-signal" x="178" y="56" width="34" height="34" rx="4"/>
+          <rect class="lg-signal" x="136" y="82" width="34" height="34" rx="4"/>
+          <rect class="lg-signal" x="178" y="98" width="34" height="34" rx="4"/>
+          <rect class="lg-signal" x="136" y="124" width="34" height="34" rx="4"/>
+          <rect class="lg-signal" x="178" y="140" width="26" height="26" rx="4"/>
+          <rect class="lg-signal" x="136" y="166" width="34" height="34" rx="4"/>
+          <rect class="lg-signal" x="136" y="208" width="16" height="16" rx="4"/>
+        </svg>
+        <span class="brand-text">Threat Detector <small>UNSW-NB15</small></span>
+      </a>
+      <nav class="mainnav" aria-label="Principal">
+        <a href="index.html"><svg class="icon" aria-hidden="true" focusable="false"><use href="assets/icons.svg#icon-list"/></svg>Consola</a>
+        <a href="simulation.html"><svg class="icon" aria-hidden="true" focusable="false"><use href="assets/icons.svg#icon-activity"/></svg>Simulación</a>
+        <a href="compare.html" aria-current="page"><svg class="icon" aria-hidden="true" focusable="false"><use href="assets/icons.svg#icon-cpu"/></svg>Modelos</a>
+      </nav>
+      <div class="topbar-right">
+        <a class="model-pill" id="modelPill" href="compare.html" title="Cambiar de modelo" hidden></a>
+        <button type="button" class="icon-btn" id="themeToggle" aria-label="Cambiar a modo oscuro"></button>
+      </div>
+    </div>
+  </header>
+
+  <main id="main" tabindex="-1">
+    <div class="page-head">
+      <div>
+        <h1>Modelos</h1>
+        <p class="lede">Compara los modelos disponibles y elige cuál usan la consola y la simulación.</p>
+      </div>
+    </div>
+    <div id="pageStatus"></div>
+    <div id="screen" class="stack">
+      <div id="modelsStatus"></div>
+      <div class="stack" id="modelsContent" hidden>
+        <div class="notice notice-info">
+          <svg class="icon" aria-hidden="true" focusable="false"><use href="assets/icons.svg#icon-info"/></svg>
+          <p><strong>Métricas oficiales:</strong> medidas sobre el conjunto de prueba completo<span id="testFlows"></span>. No dependen del archivo cargado en la consola.</p>
+        </div>
+
+        <h2 class="section-title">Modelos disponibles</h2>
+        <div class="model-cards" id="modelCards"></div>
+        <p class="help">La elección se guarda en este navegador. Los análisis nuevos usarán este modelo.</p>
+
+        <section class="card" aria-labelledby="h-compare">
+          <div class="card-head"><h2 id="h-compare">Comparación lado a lado</h2></div>
+          <div class="compare-wrap" tabindex="0" role="region" aria-labelledby="h-compare">
+            <table class="compare" id="compareTable"></table>
+          </div>
+          <p class="help" id="bestNote"></p>
+        </section>
+
+        <section class="card" aria-labelledby="h-detail">
+          <div class="card-head"><h2 id="h-detail">Detalle por modelo</h2></div>
+          <div class="tabs" role="tablist" aria-labelledby="h-detail" id="tabs"></div>
+          <div id="tabPanel" role="tabpanel"></div>
+        </section>
+      </div>
+    </div>
+  </main>
+</body>
+</html>

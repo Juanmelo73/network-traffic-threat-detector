@@ -22,6 +22,7 @@ from threat_detector.artifacts import (
 )
 from threat_detector.config import (
     ARTIFACTS_DIR,
+    BYTES_PER_MB,
     MAX_MODEL_SIZE_MB,
     MODEL_JOBLIB,
     MODEL_JSON,
@@ -48,9 +49,6 @@ COMPLEXITY_INPUTS = {
 MODEL_NAME_PATTERN = r"[a-z][a-z0-9_]*"
 # Nombre del modelo simulado, que se escribe a mano: ml/ nunca lo exporta ni lo sobrescribe.
 MOCK_MODEL_NAME = "mock"
-
-# model_size_mb es el tamaño en disco dividido entre 1.000.000 (contrato, sección 11).
-BYTES_PER_MB = 1_000_000
 
 # Sufijo del archivo temporal con que se escribe registry.json antes de reemplazarlo.
 TEMP_SUFFIX = ".tmp"

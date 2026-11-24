@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <title>Threat Detector</title>
+  <path fill="#0B3D66" d="M120 23.1 L40 54 V122 C40 178 76 218 120 234.8 Z"/>
+  <rect x="136" y="40" width="34" height="34" rx="4" fill="#EA580C"/>
+  <rect x="178" y="56" width="34" height="34" rx="4" fill="#EA580C"/>
+  <rect x="136" y="82" width="34" height="34" rx="4" fill="#EA580C"/>
+  <rect x="178" y="98" width="34" height="34" rx="4" fill="#EA580C"/>
+  <rect x="136" y="124" width="34" height="34" rx="4" fill="#EA580C"/>
+  <rect x="178" y="140" width="26" height="26" rx="4" fill="#EA580C"/>
+  <rect x="136" y="166" width="34" height="34" rx="4" fill="#EA580C"/>
+  <rect x="136" y="208" width="16" height="16" rx="4" fill="#EA580C"/>
+</svg>

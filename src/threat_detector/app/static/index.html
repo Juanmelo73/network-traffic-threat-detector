@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="es" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Consola · Threat Detector</title>
+  <script>
+    // Aplica el modo claro u oscuro antes de pintar, para que no parpadee: el guardado o, si no
+    // hay, el del sistema.
+    (function () {
+      var theme = null;
+      try { theme = localStorage.getItem('ntd-theme'); } catch (e) {}
+      if (theme !== 'light' && theme !== 'dark') {
+        theme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+      }
+      document.documentElement.setAttribute('data-theme', theme);
+    })();
+  </script>
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="styles.css">
+  <script type="module" src="js/analysis.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Saltar al contenido</a>
+
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="brand" href="index.html" aria-label="Threat Detector, ir a la consola">
+        <svg class="brand-mark" viewBox="0 0 256 256" aria-hidden="true" focusable="false">
+          <path class="lg-ink" d="M120 23.1 L40 54 V122 C40 178 76 218 120 234.8 Z"/>
+          <rect class="lg-signal" x="136" y="40" width="34" height="34" rx="4"/>
+          <rect class="lg-signal" x="178" y="56" width="34" height="34" rx="4"/>
+          <rect class="lg-signal" x="136" y="82" width="34" height="34" rx="4"/>
+          <rect class="lg-signal" x="178" y="98" width="34" height="34" rx="4"/>
+          <rect class="lg-signal" x="136" y="124" width="34" height="34" rx="4"/>
+          <rect class="lg-signal" x="178" y="140" width="26" height="26" rx="4"/>
+          <rect class="lg-signal" x="136" y="166" width="34" height="34" rx="4"/>
+          <rect class="lg-signal" x="136" y="208" width="16" height="16" rx="4"/>
+        </svg>
+        <span class="brand-text">Threat Detector <small>UNSW-NB15</small></span>
+      </a>
+      <nav class="mainnav" aria-label="Principal">
+        <a href="index.html" aria-current="page"><svg class="icon" aria-hidden="true" focusable="false"><use href="assets/icons.svg#icon-list"/></svg>Consola</a>
+        <a href="simulation.html"><svg class="icon" aria-hidden="true" focusable="false"><use href="assets/icons.svg#icon-activity"/></svg>Simulación</a>
+        <a href="compare.html"><svg class="icon" aria-hidden="true" focusable="false"><use href="assets/icons.svg#icon-cpu"/></svg>Modelos</a>
+      </nav>
+      <div class="topbar-right">
+        <a class="model-pill" id="modelPill" href="compare.html" title="Cambiar de modelo" hidden></a>
+        <button type="button" class="icon-btn" id="themeToggle" aria-label="Cambiar a modo oscuro"></button>
+      </div>
+    </div>
+  </header>
+
+  <main id="main" tabindex="-1">
+    <div class="page-head">
+      <div>
+        <h1>Consola</h1>
+        <p class="lede">Analiza un archivo de flujos y convierte miles de flujos en una lista corta de alertas priorizadas.</p>
+      </div>
+    </div>
+    <div id="pageStatus"></div>
+    <div id="screen" class="stack">
+      <section class="card upload-card" aria-labelledby="h-upload">
+        <h2 class="sr-only" id="h-upload">Analizar flujos</h2>
+        <div class="dropzone" id="dropzone" tabindex="0" role="button" aria-describedby="dzHelp">
+          <svg class="icon" aria-hidden="true" focusable="false"><use href="assets/icons.svg#icon-upload"/></svg>
+          <p class="dz-title"><strong>Arrastra aquí un CSV de flujos</strong> o <span class="link-like">elige un archivo</span></p>
+          <p class="help" id="dzHelp">Máximo 25 MB, separado por comas, con el formato de UNSW-NB15.</p>
+          <input type="file" id="fileInput" accept=".csv,text/csv" class="sr-only" tabindex="-1">
+        </div>
+        <div class="upload-side">
+          <button type="button" class="btn btn-secondary btn-block" id="sampleLabeled">
+            <svg class="icon" aria-hidden="true" focusable="false"><use href="assets/icons.svg#icon-file-text"/></svg>Usar la muestra con etiquetas
+          </button>
+          <button type="button" class="btn btn-secondary btn-block" id="sampleUnlabeled">
+            <svg class="icon" aria-hidden="true" focusable="false"><use href="assets/icons.svg#icon-file-text"/></svg>Usar la muestra sin etiquetas
+          </button>
+          <p class="help">500 flujos del conjunto de prueba, con los 9 tipos de ataque. <a href="sample_flows.csv" download>Ver un archivo de ejemplo</a></p>
+          <div class="switch-row">
+            <button type="button" role="switch" aria-checked="true" class="switch" id="labelsSwitch" aria-labelledby="labelsLabel" aria-describedby="labelsHelp"><span class="switch-thumb"></span></button>
+            <div>
+              <span class="switch-label" id="labelsLabel">Analizar mi archivo con etiquetas</span>
+              <p class="help" id="labelsHelp">Usa las columnas <code>label</code> y <code>attack_cat</code> del archivo para comparar con lo predicho.</p>
+            </div>
+          </div>
+        </div>
+        <div class="upload-status" id="uploadStatus"></div>
+      </section>
+
+      <section class="stack" id="results" aria-labelledby="h-summary" hidden>
+        <div class="analysis-bar" id="analysisBar"></div>
+        <div id="mockSlot"></div>
+        <h2 class="section-title" id="h-summary">Resumen del análisis</h2>
+        <div class="kpis" id="kpis"></div>
+        <p class="sample-note" id="sampleNote" hidden>
+          <svg class="icon icon-sm" aria-hidden="true" focusable="false"><use href="assets/icons.svg#icon-info"/></svg>
+          <span>Muestra de demostración con todos los tipos de ataque: sus resultados no representan el tráfico real. Las métricas oficiales de cada modelo están en la pantalla Modelos.</span>
+        </p>
+        <div class="card">
+          <div class="card-head">
+            <h2 id="h-queue">Cola de alertas</h2>
+            <p class="muted" id="queueCount" aria-live="polite"></p>
+          </div>
+          <div class="toolbar">
+            <div class="chips" role="radiogroup" aria-label="Qué flujos mostrar" id="filters"></div>
+            <label class="select-field"><span>Ordenar por</span>
+              <select id="sortSelect">
+                <option value="probability">Probabilidad (mayor primero)</option>
+                <option value="file">Orden del archivo</option>
+              </select>
+            </label>
+          </div>
+          <div class="table-wrap" id="queueWrap" tabindex="0" role="region" aria-labelledby="h-queue">
+            <table class="data-table" id="queueTable"></table>
+          </div>
+          <div id="queueEmpty" hidden></div>
+          <div class="pagination" id="pagination">
+            <span>25 flujos por página</span>
+            <div class="pager">
+              <button type="button" class="btn btn-secondary btn-sm" id="prevPage">
+                <svg class="icon" aria-hidden="true" focusable="false"><use href="assets/icons.svg#icon-chevron-left"/></svg>Anterior
+              </button>
+              <span class="page-info" id="pageInfo"></span>
+              <button type="button" class="btn btn-secondary btn-sm" id="nextPage">
+                Siguiente<svg class="icon" aria-hidden="true" focusable="false"><use href="assets/icons.svg#icon-chevron-right"/></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+</body>
+</html>

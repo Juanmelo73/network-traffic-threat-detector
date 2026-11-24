@@ -11,11 +11,10 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import make_pipeline
 
 from threat_detector.artifacts import MODEL_INFO_FIELDS, ArtifactError, read_registry
-from threat_detector.config import MAX_MODEL_SIZE_MB, MODEL_JOBLIB, MODEL_JSON, MODELS_DIR, REGISTRY_PATH
+from threat_detector.config import BYTES_PER_MB, MAX_MODEL_SIZE_MB, MODEL_JOBLIB, MODEL_JSON, MODELS_DIR, REGISTRY_PATH
 from threat_detector.dataset import CATEGORICAL_COLS
 from threat_detector.ml.preprocessing import LOG_COLS, build_preprocessor, numeric_input_cols
 from threat_detector.ml.training import (
-    BYTES_PER_MB,
     TEMP_SUFFIX,
     check_model_size,
     export_model,
