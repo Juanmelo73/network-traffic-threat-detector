@@ -6,11 +6,20 @@ import numpy as np
 import pytest
 from conftest import structure
 
-from threat_detector.artifacts import MODEL_INFO_FIELDS, load_artifacts, read_model_info
-from threat_detector.config import BYTES_PER_MB, MAX_MODEL_SIZE_MB, MODEL_JOBLIB, MODEL_JSON, MODELS_DIR, TEST_ROWS
+from threat_detector.artifacts import MODEL_INFO_FIELDS, load_artifacts, read_model_info, read_registry
+from threat_detector.config import (
+    BYTES_PER_MB,
+    FINAL_RESULTS_JSON,
+    MAX_MODEL_SIZE_MB,
+    MODEL_JOBLIB,
+    MODEL_JSON,
+    MODELS_DIR,
+    TEST_RESULTS_CSV,
+    TEST_ROWS,
+)
 from threat_detector.dataset import ATTACK_CAT, ATTACK_TYPES, CATEGORICAL_COLS, NORMAL_CAT
 from threat_detector.ml.preprocessing import LOG_COLS, build_preprocessor, numeric_input_cols
-from threat_detector.ml.training import feature_groups
+from threat_detector.ml.training import feature_groups, final_results
 
 # Las métricas del contrato y del simulado tienen 4 decimales.
 DECIMALS = 4
@@ -169,3 +178,24 @@ def test_mock_metrics_are_possible_for_the_real_test_set(mock, test_partition):
 def test_mock_feature_groups_match_a_preprocessor_fitted_on_the_train_part(mock, train_split):
     preprocessor = build_preprocessor("m2").fit(train_split[0])
     assert list(feature_groups(preprocessor).items()) == list(mock["feature_groups"].items())
+
+
+def test_final_results_json_matches_the_saved_results():
+    # final_results.json es lo que arma final_results con test_results.csv y registry.json, y sus
+    # modelos registrados tienen el umbral y las métricas de prueba de su model.json.
+    import pandas as pd
+
+    saved = json.loads(FINAL_RESULTS_JSON.read_text(encoding="utf-8"))
+    # round_trip: el conversor rápido de pandas puede cambiar el último dígito de un decimal.
+    table = pd.read_csv(TEST_RESULTS_CSV, float_precision="round_trip")
+    assert saved == json.loads(json.dumps(final_results(table, read_registry())))
+    assert [m["name"] for m in saved["models"]] == [entry[0] for entry in REGISTERED]
+    for model in saved["models"]:
+        info = read_model_info(model["name"])
+        detection = info["test_metrics"]["detection"]
+        assert model["threshold"] == info["threshold"] and model["preprocessing_method"] == info["preprocessing_method"]
+        assert model["test"]["confusion"] == detection["confusion"]
+        assert model["test"]["recall"] == detection["detection_rate"] and model["test"]["pr_auc"] == detection["pr_auc"]
+        assert model["test"]["macro_f1"] == info["test_metrics"]["attack_type"]["macro_f1"]
+    assert len(saved["reference_models"]) == 7
+

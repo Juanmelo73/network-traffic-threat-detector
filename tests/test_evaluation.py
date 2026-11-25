@@ -17,13 +17,21 @@ from threat_detector.ml.evaluation import (
     compute_threshold,
     detection_metrics,
     false_alarms_by_category,
+    flow_contributions,
+    global_importance,
     ks_distance,
+    logistic_coefficients,
     numeric_differences,
     label_mixed_groups,
+    stratified_samples,
     threshold_rule,
     unavoidable_type_errors,
 )
-from threat_detector.ml.preprocessing import flow_pattern_ids
+from threat_detector.ml.preprocessing import build_preprocessor, flow_pattern_ids
+from threat_detector.ml.training import feature_groups
+from sklearn.ensemble import HistGradientBoostingClassifier, RandomForestClassifier
+from sklearn.linear_model import LogisticRegression
+from sklearn.pipeline import Pipeline
 
 # 20 ataques con probabilidades 0,05 a 1,00 (redondeadas a 2 decimales, para que el punto flotante
 # no cambie los valores esperados) y 10 normales: 6 con probabilidad ≥ 0,1 y 4 por debajo.
@@ -370,4 +378,82 @@ def test_numeric_differences_table():
     assert (table.loc["dur", "first_flows"], table.loc["dur", "second_flows"]) == (4, 5)
     assert table.loc["dur", "ks_d"] == pytest.approx(ks_distance(first["dur"], second["dur"]))
     assert table.loc["sbytes", "ks_d"] == 0.0
+
+
+# Importancia global de las variables
+
+# Detectores de prueba diminutos, entrenados con sample_flows.csv: no son los modelos del proyecto.
+IMPORTANCE_MODELS = {
+    "hgb": ("m1", lambda: HistGradientBoostingClassifier(max_iter=20, random_state=42), "shap_tree"),
+    "rf": ("m2", lambda: RandomForestClassifier(n_estimators=5, max_depth=4, random_state=42), "shap_tree"),
+    "lr": ("m2", lambda: LogisticRegression(max_iter=1000), "linear_logit"),
+}
+
+
+def importance_model(kind, flows):
+    """(model, info) de un detector de prueba, con lo que leen las funciones de importancia."""
+    method, estimator, explanation = IMPORTANCE_MODELS[kind]
+    detector = Pipeline([("preprocessor", build_preprocessor(method)), ("model", estimator())]).fit(flows, flows[TARGET])
+    info = {"name": kind, "explanation_method": explanation, "feature_groups": feature_groups(detector["preprocessor"])}
+    return {"detector": detector, "attack_type_classifier": detector}, info
+
+
+def test_stratified_samples_are_disjoint_and_keep_the_proportions(sample_flows):
+    first, second = stratified_samples(sample_flows, 100, 2, random_state=42)
+    assert len(first) == len(second) == 100
+    assert first.index.intersection(second.index).empty
+    expected = sample_flows[ATTACK_CAT].value_counts(normalize=True) * 100
+    for sample in (first, second):
+        counts = sample[ATTACK_CAT].value_counts().reindex(expected.index, fill_value=0)
+        assert (counts - expected).abs().max() <= 1
+    # Con la misma semilla salen las mismas muestras.
+    again = stratified_samples(sample_flows, 100, 2, random_state=42)
+    assert first.index.equals(again[0].index) and second.index.equals(again[1].index)
+
+
+@pytest.mark.parametrize("kind", list(IMPORTANCE_MODELS))
+def test_flow_contributions_add_up_to_the_model_output(kind, sample_flows):
+    # Suma de las contribuciones + valor base = salida del modelo para la clase de ataque: log-odds
+    # en HistGradientBoosting y regresión logística, probabilidad en Random Forest.
+    model, info = importance_model(kind, sample_flows)
+    flows = sample_flows.iloc[::50]
+    contributions = flow_contributions(model, info, flows)
+    assert list(contributions.columns) == list(info["feature_groups"]) and contributions.index.equals(flows.index)
+    estimator = model["detector"]["model"]
+    probability = model["detector"].predict_proba(flows)[:, list(estimator.classes_).index(1)]
+    if kind == "lr":
+        base, output = estimator.intercept_[0], np.log(probability / (1 - probability))
+    else:
+        import shap
+
+        expected = np.atleast_1d(shap.TreeExplainer(estimator).expected_value)
+        base = expected[-1] if kind == "rf" else expected[0]
+        output = probability if kind == "rf" else np.log(probability / (1 - probability))
+    np.testing.assert_allclose(contributions.sum(axis=1) + base, output, atol=1e-6)
+
+
+def test_global_importance_ranks_the_mean_absolute_contribution(sample_flows):
+    model, info = importance_model("hgb", sample_flows)
+    table = global_importance(model, info, sample_flows)
+    expected = flow_contributions(model, info, sample_flows).abs().mean().sort_values(ascending=False, kind="stable")
+    assert table["feature"].tolist() == expected.index.tolist()
+    np.testing.assert_allclose(table["mean_abs_contribution"], expected.to_numpy())
+    assert table["rank"].tolist() == list(range(1, len(expected) + 1))
+    assert table["share"].sum() == pytest.approx(1)
+
+
+def test_logistic_coefficients_follow_the_prepared_columns(sample_flows):
+    model, info = importance_model("lr", sample_flows)
+    table = logistic_coefficients(model, info)
+    estimator = model["detector"]["model"]
+    assert table["column"].tolist() == list(model["detector"]["preprocessor"].get_feature_names_out())
+    np.testing.assert_array_equal(table["coefficient"], estimator.coef_[0])
+    # Las columnas de cada variable son las de feature_groups.
+    assert table.groupby("feature", sort=False)["column"].apply(list).to_dict() == info["feature_groups"]
+
+
+def test_importance_needs_an_explanation_method(sample_flows):
+    model, info = importance_model("lr", sample_flows)
+    with pytest.raises(ValueError, match="no tiene un método de explicación"):
+        flow_contributions(model, {**info, "explanation_method": None}, sample_flows)
 

@@ -2057,3 +2057,17 @@ def test_compact_rows_explain_the_same(name, real_client, sample_flows):
     compact = compact_flows(flows)
     for position in range(0, len(flows), 25):
         assert predictor.explain(compact.iloc[position]) == predictor.explain(flows.iloc[position]), position
+
+
+@pytest.mark.parametrize("kind", ["hist_gradient_boosting", "random_forest", "logistic_regression"])
+def test_global_importance_uses_the_app_explanation(kind, sample_flows):
+    # La importancia global del artículo se calcula con la misma explicación que muestra la app.
+    from threat_detector.ml.evaluation import flow_contributions
+
+    predictor = explained_predictor(kind, sample_flows)
+    rows = sample_flows.iloc[[0, 3, 250, 499]]
+    table = flow_contributions(predictor.model, {"name": kind, **predictor.info}, rows)
+    for position, (_, flow) in enumerate(rows.iterrows()):
+        explained = {c["feature"]: c["contribution"] for c in predictor.explain(flow)}
+        assert table.iloc[position].to_dict() == pytest.approx(explained, abs=1e-12)
+

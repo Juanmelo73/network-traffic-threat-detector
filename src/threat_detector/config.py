@@ -30,6 +30,8 @@ LABEL_MIXED_GROUPS_CSV = MODEL_SEARCH_DIR / "label_mixed_groups.csv"
 TEST_RESULTS_CSV = MODEL_SEARCH_DIR / "test_results.csv"
 TEST_PER_TYPE_CSV = MODEL_SEARCH_DIR / "test_per_type.csv"
 OOB_CSV = MODEL_SEARCH_DIR / "oob_vs_validation.csv"
+# Resumen de los resultados finales para el artículo, armado desde test_results.csv y registry.json.
+FINAL_RESULTS_JSON = MODEL_SEARCH_DIR / "final_results.json"
 REGISTRY_PATH = ARTIFACTS_DIR / "registry.json"
 
 # Archivos de la carpeta de cada modelo, artifacts/models/<model_name>/ (contrato, sección 10).

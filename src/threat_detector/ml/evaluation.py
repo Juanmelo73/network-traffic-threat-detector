@@ -319,3 +319,93 @@ def numeric_differences(first, second, columns):
         rows.append(row)
     return pd.DataFrame(rows)
 
+
+
+# ---------- Importancia global de las variables (para el artículo) ----------
+
+# Métodos de explicación (contrato, sección 11) y la escala de sus contribuciones.
+SHAP_TREE = "shap_tree"
+LINEAR_LOGIT = "linear_logit"
+# Clase del detector binario que cuenta como "ataque"; se busca por nombre en classes_.
+ATTACK_CLASS = 1
+
+
+def stratified_samples(flows, size, count, random_state):
+    """count muestras de size flujos cada una, sin flujos en común, estratificadas por attack_cat.
+
+    Cada muestra conserva la proporción de cada attack_cat de flows (redondeada). La primera sale
+    de flows con random_state, la segunda del resto con random_state + 1, y así.
+    """
+    from sklearn.model_selection import train_test_split
+
+    samples, rest = [], flows
+    for number in range(count):
+        sample, rest = train_test_split(rest, train_size=size, stratify=rest[ATTACK_CAT], random_state=random_state + number)
+        samples.append(sample)
+    return samples
+
+
+def _attack_values(values, classes):
+    """Las contribuciones hacia la clase de ataque: la columna de esa clase, buscada por nombre.
+
+    SHAP da una columna por clase (3 dimensiones) en Random Forest y una sola, la de classes_[1],
+    en HistGradientBoosting; si el ataque fuera classes_[0], el signo se invierte.
+    """
+    column = list(classes).index(ATTACK_CLASS)
+    if values.ndim == 3:
+        return values[:, :, column]
+    return values if column == 1 else -values
+
+
+def flow_contributions(model, info, flows):
+    """Contribución de cada variable a la probabilidad de ataque del detector, flujo por flujo.
+
+    Es la misma explicación de la app (contrato, sección 5): SHAP TreeExplainer para "shap_tree"
+    (log-odds en HistGradientBoosting, probabilidad en Random Forest) y coeficiente × valor
+    preparado para "linear_logit" (log-odds). Las columnas preparadas de una variable (las one-hot
+    de proto, por ejemplo) se suman con feature_groups. Devuelve un DataFrame de flujos × variables;
+    positivo empuja hacia "ataque". Lanza ValueError si el modelo no tiene un método de explicación.
+    """
+    detector = model["detector"]
+    features = detector["preprocessor"].transform(flows)
+    estimator = detector["model"]
+    method = info["explanation_method"]
+    if method == SHAP_TREE:
+        import shap
+
+        values = _attack_values(np.asarray(shap.TreeExplainer(estimator).shap_values(features)), estimator.classes_)
+    elif method == LINEAR_LOGIT:
+        values = _attack_values(features.to_numpy(dtype=float) * estimator.coef_[0], estimator.classes_)
+    else:
+        raise ValueError(f"El modelo {info['name']} no tiene un método de explicación (explanation_method = {method}).")
+    by_column = pd.DataFrame(values, columns=features.columns, index=flows.index)
+    return pd.DataFrame({feature: by_column[columns].sum(axis=1) for feature, columns in info["feature_groups"].items()})
+
+
+def global_importance(model, info, flows):
+    """Importancia global de cada variable: el promedio de |contribución| sobre flows.
+
+    Columnas: feature, mean_abs_contribution (en la escala del método), share (parte de la suma
+    de todas las variables) y rank (1 = la más importante). Ordenado de mayor a menor. Como las
+    escalas cambian entre modelos, se comparan rank y share, no el valor bruto.
+    """
+    importance = flow_contributions(model, info, flows).abs().mean()
+    table = pd.DataFrame({"feature": importance.index, "mean_abs_contribution": importance.to_numpy()})
+    table["share"] = table["mean_abs_contribution"] / table["mean_abs_contribution"].sum()
+    table = table.sort_values("mean_abs_contribution", ascending=False, kind="stable").reset_index(drop=True)
+    table["rank"] = np.arange(1, len(table) + 1)
+    return table
+
+
+def logistic_coefficients(model, info):
+    """Coeficientes del detector de regresión logística, uno por columna preparada, hacia "ataque".
+
+    Columnas: column (la columna preparada), feature (su variable, según feature_groups) y
+    coefficient. Con M2 las numéricas están estandarizadas, así que su coeficiente es el cambio en
+    log-odds por una desviación estándar; en las one-hot, por tener esa categoría.
+    """
+    estimator = model["detector"]["model"]
+    coefficients = _attack_values(estimator.coef_[0], estimator.classes_)
+    names = model["detector"]["preprocessor"].get_feature_names_out()
+    feature_of = {column: feature for feature, columns in info["feature_groups"].items() for column in columns}
+    return pd.DataFrame({"column": names, "feature": [feature_of[c] for c in names], "coefficient": coefficients})

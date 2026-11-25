@@ -1737,3 +1737,114 @@ def train_final_models(
     if "random_forest" in set(final.dropna(subset=["method"])["family"]):
         oob_comparison(results, final, train_flows).to_csv(output_dir / OOB_CSV.name, index=False)
     return pd.read_csv(test_results_path)
+
+
+# ---------- Resumen de los resultados finales (para el artículo) ----------
+
+# Métricas del detector y del clasificador que lleva cada modelo registrado, por parte.
+FINAL_METRICS = ["recall", "false_alarm_rate", "precision", "f1", "accuracy", "pr_auc", "roc_auc", "macro_f1"]
+# Métricas principales de los modelos de referencia (las otras familias y las versiones M3).
+REFERENCE_METRICS = ["recall", "false_alarm_rate", "precision", "f1", "pr_auc", "macro_f1"]
+CONFUSION_FIELDS = ["tp", "fp", "tn", "fn"]
+
+
+def _json_value(value, integer=False):
+    """Un valor de la tabla como tipo de Python para JSON: None si está vacío.
+
+    Con integer=True (conteos e iteraciones) se devuelve como int: pandas lee como decimal una
+    columna de enteros que tiene celdas vacías. Las métricas quedan como vienen.
+    """
+    if isinstance(value, np.generic):
+        value = value.item()
+    if value is None or value is pd.NA or (isinstance(value, float) and math.isnan(value)):
+        return None
+    return int(value) if integer else value
+
+
+def _split_metrics(row, split, metrics, confusion):
+    values = {metric: _json_value(row[f"{split}_{metric}"]) for metric in metrics}
+    if confusion:
+        values["confusion"] = {field: _json_value(row[f"{split}_{field}"], integer=True) for field in CONFUSION_FIELDS}
+    return values
+
+
+def _same_value(rows, column, integer=False):
+    """El único valor de column en rows; ValueError si los modelos no coinciden."""
+    values = rows[column].unique()
+    if len(values) != 1:
+        raise ValueError(f"Los modelos registrados no tienen el mismo valor en {column}: {', '.join(map(str, values))}.")
+    return _json_value(values[0], integer)
+
+
+def final_results(test_results, registry):
+    """Resumen de los resultados finales, armado solo con test_results.csv y registry.json.
+
+    Trae los modelos registrados, en el orden de registry.json, con su método, sus hiperparámetros,
+    sus iteraciones, su umbral, las métricas de validación y de prueba (con la matriz de confusión
+    del detector), el tamaño y los tiempos; y en reference_models, las otras familias y las
+    versiones M3 con sus métricas principales. Los valores van tal como están en la tabla, sin
+    redondear, y los vacíos como None. El equipo, la versión de scikit-learn y la de la búsqueda,
+    y los flujos de cada parte, van una sola vez: lanza ValueError si no son iguales en todos los
+    modelos registrados o si un modelo registrado no está en la tabla.
+    """
+    names = [entry["name"] for entry in registry["models"]]
+    by_name = test_results.set_index("name", drop=False)
+    missing = [name for name in names if name not in by_name.index]
+    if missing:
+        raise ValueError(f"Los modelos registrados {', '.join(missing)} no están en test_results.csv.")
+    registered = by_name.loc[names]
+    flows = registered.assign(
+        validation_flows=registered[[f"validation_{f}" for f in CONFUSION_FIELDS]].sum(axis=1),
+        test_flows=registered[[f"test_{f}" for f in CONFUSION_FIELDS]].sum(axis=1),
+    )
+    base = registered.loc[registered["kind"] == "modelo base", "name"].tolist()
+
+    models = []
+    for _, row in registered.iterrows():
+        models.append({
+            "name": row["name"],
+            "display_name": row["display_name"],
+            "kind": row["kind"],
+            "family": row["family"],
+            "preprocessing_method": row["method"],
+            "trained_at": row["trained_at"],
+            "detector": {"params": json.loads(row["detector_params"]), "iterations": _json_value(row["detector_iterations"], integer=True)},
+            "attack_type_classifier": {
+                "params": json.loads(row["classifier_params"]),
+                "iterations": _json_value(row["classifier_iterations"], integer=True),
+            },
+            "threshold": _json_value(row["threshold"]),
+            "validation": _split_metrics(row, "validation", FINAL_METRICS, confusion=True),
+            "test": _split_metrics(row, "test", FINAL_METRICS, confusion=True),
+            "model_size_mb": _json_value(row["model_size_mb"]),
+            "training_seconds": _json_value(row["training_seconds"]),
+            "prediction_ms_per_1000_flows": _json_value(row["prediction_ms_per_1000_flows"]),
+        })
+    references = [
+        {
+            "name": row["name"],
+            "display_name": row["display_name"],
+            "kind": row["kind"],
+            "method": row["method"],
+            "validation": _split_metrics(row, "validation", REFERENCE_METRICS, confusion=False),
+            "test": _split_metrics(row, "test", REFERENCE_METRICS, confusion=False),
+        }
+        for _, row in test_results[~test_results["name"].isin(names)].iterrows()
+    ]
+    return {
+        "source": "test_results.csv",
+        "default_model": registry["default_model"],
+        "base_model": base[0] if len(base) == 1 else None,
+        "data": {
+            "training_flows": _same_value(flows, "training_flows", integer=True),
+            "validation_flows": _same_value(flows, "validation_flows", integer=True),
+            "test_flows": _same_value(flows, "test_flows", integer=True),
+        },
+        "environment": {
+            "hardware": _same_value(registered, "hardware"),
+            "sklearn_version": _same_value(registered, "sklearn_version"),
+            "search_version": _same_value(registered, "search_version", integer=True),
+        },
+        "models": models,
+        "reference_models": references,
+    }

@@ -1,0 +1,416 @@
+{
+  "source": "test_results.csv",
+  "default_model": "hist_gradient_boosting",
+  "base_model": "logistic_regression",
+  "data": {
+    "training_flows": 140273,
+    "validation_flows": 35068,
+    "test_flows": 82332
+  },
+  "environment": {
+    "hardware": "11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz, 16 núcleos lógicos",
+    "sklearn_version": "1.9.1",
+    "search_version": 3
+  },
+  "models": [
+    {
+      "name": "hist_gradient_boosting",
+      "display_name": "HistGradientBoosting",
+      "kind": "elegido",
+      "family": "hist_gradient_boosting",
+      "preprocessing_method": "m1",
+      "trained_at": "2026-11-25T00:24:14Z",
+      "detector": {
+        "params": {
+          "model__class_weight": null,
+          "model__learning_rate": 0.1,
+          "model__max_iter": 200,
+          "model__max_leaf_nodes": 63,
+          "model__min_samples_leaf": 20
+        },
+        "iterations": 180
+      },
+      "attack_type_classifier": {
+        "params": {
+          "model__class_weight": "balanced",
+          "model__learning_rate": 0.1,
+          "model__max_iter": 200,
+          "model__max_leaf_nodes": 63,
+          "model__min_samples_leaf": 100
+        },
+        "iterations": 200
+      },
+      "threshold": 0.6885623180528533,
+      "validation": {
+        "recall": 0.9500167588402882,
+        "false_alarm_rate": 0.046160714285714284,
+        "precision": 0.9777078302863056,
+        "f1": 0.9636634084147896,
+        "accuracy": 0.9512375955286871,
+        "pr_auc": 0.9968308760370933,
+        "roc_auc": 0.9933179511120687,
+        "macro_f1": 0.6111647016645654,
+        "confusion": {
+          "tp": 22675,
+          "fp": 517,
+          "tn": 10683,
+          "fn": 1193
+        }
+      },
+      "test": {
+        "recall": 0.9650357363451866,
+        "false_alarm_rate": 0.1652972972972973,
+        "precision": 0.8773439223472315,
+        "f1": 0.9191028940595619,
+        "accuracy": 0.9064640722926687,
+        "pr_auc": 0.988279244397149,
+        "roc_auc": 0.9839923796447113,
+        "macro_f1": 0.559601298282228,
+        "confusion": {
+          "tp": 43747,
+          "fp": 6116,
+          "tn": 30884,
+          "fn": 1585
+        }
+      },
+      "model_size_mb": 14.213219,
+      "training_seconds": 24.732194463009364,
+      "prediction_ms_per_1000_flows": 16.111700152915574
+    },
+    {
+      "name": "random_forest",
+      "display_name": "Random Forest",
+      "kind": "elegido",
+      "family": "random_forest",
+      "preprocessing_method": "m2",
+      "trained_at": "2026-11-25T00:24:27Z",
+      "detector": {
+        "params": {
+          "model__class_weight": "balanced",
+          "model__max_depth": 20,
+          "model__min_samples_leaf": 5,
+          "model__n_estimators": 50
+        },
+        "iterations": 50
+      },
+      "attack_type_classifier": {
+        "params": {
+          "model__class_weight": "balanced",
+          "model__max_depth": 30,
+          "model__min_samples_leaf": 1,
+          "model__n_estimators": 50
+        },
+        "iterations": 25
+      },
+      "threshold": 0.48942289540953277,
+      "validation": {
+        "recall": 0.9500167588402882,
+        "false_alarm_rate": 0.05258928571428571,
+        "precision": 0.9746819119669876,
+        "f1": 0.9621912925401002,
+        "accuracy": 0.9491844416562107,
+        "pr_auc": 0.9963666154401292,
+        "roc_auc": 0.9924329421939716,
+        "macro_f1": 0.5896920432754278,
+        "confusion": {
+          "tp": 22675,
+          "fp": 589,
+          "tn": 10611,
+          "fn": 1193
+        }
+      },
+      "test": {
+        "recall": 0.9706388423188917,
+        "false_alarm_rate": 0.1692972972972973,
+        "precision": 0.8753804834377797,
+        "f1": 0.920551900164231,
+        "accuracy": 0.9077515425351018,
+        "pr_auc": 0.9886186786264951,
+        "roc_auc": 0.9848788240393398,
+        "macro_f1": 0.5399500329167243,
+        "confusion": {
+          "tp": 44001,
+          "fp": 6264,
+          "tn": 30736,
+          "fn": 1331
+        }
+      },
+      "model_size_mb": 43.407028,
+      "training_seconds": 2.8973290819994872,
+      "prediction_ms_per_1000_flows": 2.543443132827042
+    },
+    {
+      "name": "mlp",
+      "display_name": "Red neuronal (MLP)",
+      "kind": "elegido",
+      "family": "mlp",
+      "preprocessing_method": "m2",
+      "trained_at": "2026-11-25T00:25:39Z",
+      "detector": {
+        "params": {
+          "model__alpha": 0.001,
+          "model__hidden_layer_sizes": [
+            100,
+            50
+          ],
+          "sample_weight": "balanced"
+        },
+        "iterations": 68
+      },
+      "attack_type_classifier": {
+        "params": {
+          "model__alpha": 0.001,
+          "model__hidden_layer_sizes": [
+            64
+          ],
+          "sample_weight": null
+        },
+        "iterations": 93
+      },
+      "threshold": 0.4321110367100775,
+      "validation": {
+        "recall": 0.9500167588402882,
+        "false_alarm_rate": 0.06232142857142857,
+        "precision": 0.9701364822658624,
+        "f1": 0.9599712114476832,
+        "accuracy": 0.9460761948214896,
+        "pr_auc": 0.9958709633370011,
+        "roc_auc": 0.9914214938111998,
+        "macro_f1": 0.5495711021986912,
+        "confusion": {
+          "tp": 22675,
+          "fp": 698,
+          "tn": 10502,
+          "fn": 1193
+        }
+      },
+      "test": {
+        "recall": 0.9619915291626224,
+        "false_alarm_rate": 0.19413513513513514,
+        "precision": 0.858580091352969,
+        "f1": 0.9073488410802714,
+        "accuracy": 0.891828207744255,
+        "pr_auc": 0.9842676907508909,
+        "roc_auc": 0.9788701639078415,
+        "macro_f1": 0.4620797009703311,
+        "confusion": {
+          "tp": 43609,
+          "fp": 7183,
+          "tn": 29817,
+          "fn": 1723
+        }
+      },
+      "model_size_mb": 0.390984,
+      "training_seconds": 69.47842803898675,
+      "prediction_ms_per_1000_flows": 4.146000206356602
+    },
+    {
+      "name": "logistic_regression",
+      "display_name": "Regresión logística (modelo base)",
+      "kind": "modelo base",
+      "family": "logistic_regression",
+      "preprocessing_method": "m2",
+      "trained_at": "2026-11-25T00:26:21Z",
+      "detector": {
+        "params": {},
+        "iterations": 138
+      },
+      "attack_type_classifier": {
+        "params": {},
+        "iterations": 477
+      },
+      "threshold": 0.6438459113000569,
+      "validation": {
+        "recall": 0.9500167588402882,
+        "false_alarm_rate": 0.08955357142857143,
+        "precision": 0.9576400033786637,
+        "f1": 0.9538131493711354,
+        "accuracy": 0.9373788068894718,
+        "pr_auc": 0.9930072869016684,
+        "roc_auc": 0.9862557683329742,
+        "macro_f1": 0.4012666689560802,
+        "confusion": {
+          "tp": 22675,
+          "fp": 1003,
+          "tn": 10197,
+          "fn": 1193
+        }
+      },
+      "test": {
+        "recall": 0.9453586870202064,
+        "false_alarm_rate": 0.2464864864864865,
+        "precision": 0.8245310245310246,
+        "f1": 0.8808204959560977,
+        "accuracy": 0.8591434679104115,
+        "pr_auc": 0.9724589315023316,
+        "roc_auc": 0.9647608908211133,
+        "macro_f1": 0.3657467886616116,
+        "confusion": {
+          "tp": 42855,
+          "fp": 9120,
+          "tn": 27880,
+          "fn": 2477
+        }
+      },
+      "model_size_mb": 0.027803,
+      "training_seconds": 38.86958229400625,
+      "prediction_ms_per_1000_flows": 2.761869030159198
+    }
+  ],
+  "reference_models": [
+    {
+      "name": "extra_trees",
+      "display_name": "Extra Trees",
+      "kind": "referencia",
+      "method": "m2",
+      "validation": {
+        "recall": 0.9500167588402882,
+        "false_alarm_rate": 0.05696428571428572,
+        "precision": 0.9726332947282632,
+        "f1": 0.9611920052563532,
+        "pr_auc": 0.9961551120853679,
+        "macro_f1": 0.5072801907649063
+      },
+      "test": {
+        "recall": 0.9701755933998059,
+        "false_alarm_rate": 0.18283783783783783,
+        "precision": 0.866686373041679,
+        "f1": 0.9155156801315611,
+        "pr_auc": 0.9876070451386243,
+        "macro_f1": 0.4478638955733649
+      }
+    },
+    {
+      "name": "gaussian_nb",
+      "display_name": "Gaussian NB",
+      "kind": "referencia",
+      "method": "m2",
+      "validation": {
+        "recall": 0.9500586559410089,
+        "false_alarm_rate": 0.26625,
+        "precision": 0.8837789383428171,
+        "f1": 0.9157210354157412,
+        "pr_auc": 0.9630029099922689,
+        "macro_f1": 0.19475644986660726
+      },
+      "test": {
+        "recall": 0.9493293920409424,
+        "false_alarm_rate": 0.49289189189189186,
+        "precision": 0.7023599686643165,
+        "f1": 0.8073805860943304,
+        "pr_auc": 0.9044108000791227,
+        "macro_f1": 0.19696569461379587
+      }
+    },
+    {
+      "name": "decision_tree",
+      "display_name": "Árbol de decisión",
+      "kind": "referencia",
+      "method": "m1",
+      "validation": {
+        "recall": 0.954248366013072,
+        "false_alarm_rate": 0.08580357142857142,
+        "precision": 0.9595146817205207,
+        "f1": 0.956874277911984,
+        "pr_auc": 0.9473263452731507,
+        "macro_f1": 0.6003342197824887
+      },
+      "test": {
+        "recall": 0.954800141180623,
+        "false_alarm_rate": 0.2444864864864865,
+        "precision": 0.8271321829196048,
+        "f1": 0.8863927258578143,
+        "pr_auc": 0.8148017764848622,
+        "macro_f1": 0.5127998833076545
+      }
+    },
+    {
+      "name": "dummy",
+      "display_name": "Referencia (dummy)",
+      "kind": "referencia",
+      "method": "m1",
+      "validation": {
+        "recall": 1.0,
+        "false_alarm_rate": 1.0,
+        "precision": 0.680620508725904,
+        "f1": 0.8099633500746573,
+        "pr_auc": 0.680620508725904,
+        "macro_f1": 0.055785671450287996
+      },
+      "test": {
+        "recall": 1.0,
+        "false_alarm_rate": 1.0,
+        "precision": 0.5506000097167566,
+        "f1": 0.710176713873919,
+        "pr_auc": 0.5506000097167566,
+        "macro_f1": 0.06531712779084398
+      }
+    },
+    {
+      "name": "hist_gradient_boosting_m3",
+      "display_name": "HistGradientBoosting",
+      "kind": "m3",
+      "method": "m3",
+      "validation": {
+        "recall": 0.9500167588402882,
+        "false_alarm_rate": 0.04767857142857143,
+        "precision": 0.9769916842604163,
+        "f1": 0.9633154194192494,
+        "pr_auc": 0.996787255236007,
+        "macro_f1": 0.5903379559058735
+      },
+      "test": {
+        "recall": 0.9622121238859966,
+        "false_alarm_rate": 0.17335135135135135,
+        "precision": 0.8718046089580876,
+        "f1": 0.9147800555759451,
+        "pr_auc": 0.9869753557405611,
+        "macro_f1": 0.5399122958095981
+      }
+    },
+    {
+      "name": "random_forest_m3",
+      "display_name": "Random Forest",
+      "kind": "m3",
+      "method": "m3",
+      "validation": {
+        "recall": 0.9500167588402882,
+        "false_alarm_rate": 0.05133928571428571,
+        "precision": 0.975268817204301,
+        "f1": 0.9624771849399381,
+        "pr_auc": 0.9963827990468261,
+        "macro_f1": 0.588577939893874
+      },
+      "test": {
+        "recall": 0.9704403070678549,
+        "false_alarm_rate": 0.1687027027027027,
+        "precision": 0.8757415296412788,
+        "f1": 0.9206621601824917,
+        "pr_auc": 0.9883345449151655,
+        "macro_f1": 0.5368558687715538
+      }
+    },
+    {
+      "name": "mlp_m3",
+      "display_name": "Red neuronal (MLP)",
+      "kind": "m3",
+      "method": "m3",
+      "validation": {
+        "recall": 0.9500167588402882,
+        "false_alarm_rate": 0.06455357142857143,
+        "precision": 0.9690999230703479,
+        "f1": 0.9594634621080692,
+        "pr_auc": 0.9956703534845154,
+        "macro_f1": 0.4709732819946805
+      },
+      "test": {
+        "recall": 0.9581090620312362,
+        "false_alarm_rate": 0.19508108108108108,
+        "precision": 0.8574954097648615,
+        "f1": 0.9050144296385818,
+        "pr_auc": 0.9812571056362767,
+        "macro_f1": 0.40081501336044534
+      }
+    }
+  ]
+}

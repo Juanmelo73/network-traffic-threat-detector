@@ -31,9 +31,11 @@ from threat_detector.ml import training as training_module
 from threat_detector.ml.evaluation import attack_type_metrics, detection_metrics, threshold_rule
 from threat_detector.ml.preprocessing import LOG_COLS, PREPROCESSING_METHODS, build_preprocessor, numeric_input_cols
 from threat_detector.ml.training import (
+    REFERENCE_METRICS,
     RESULT_COLUMNS,
     TEMP_SUFFIX,
     apply_simplicity_rule,
+    final_results,
     check_model_size,
     complexity,
     export_model,
@@ -1306,3 +1308,74 @@ def test_register_needs_an_existing_registry(exported):
     (exported / REGISTRY_PATH.name).unlink()
     with pytest.raises(ArtifactError, match="Falta registry.json"):
         register_model("model_a", exported)
+
+
+# Resumen de los resultados finales (final_results.json)
+
+def summary_row(name, kind, **changes):
+    """Una fila de test_results.csv escrita a mano, con valores inventados."""
+    row = {
+        "name": name, "kind": kind, "family": name.removesuffix("_m3"), "display_name": name.upper(), "method": "m2",
+        "registered": kind in ("elegido", "modelo base"),
+        "detector_params": '{"model__max_depth": 20, "model__class_weight": null}',
+        "classifier_params": '{"model__max_depth": 30}', "detector_iterations": 50.0, "classifier_iterations": np.nan,
+        "threshold": 0.5, "training_seconds": 12.5, "training_flows": 1000, "prediction_ms_per_1000_flows": 3.25,
+        "model_size_mb": 1.5, "hardware": "CPU de prueba", "trained_at": "2026-01-01T00:00:00Z",
+        "sklearn_version": "1.9.1", "search_version": 3,
+    }
+    for split, counts in (("validation", (40, 5, 45, 10)), ("test", (60, 15, 65, 20))):
+        row.update({f"{split}_{field}": value for field, value in zip(("tp", "fp", "tn", "fn"), counts)})
+        row.update({f"{split}_{metric}": 0.75 for metric in ("recall", "false_alarm_rate", "precision", "f1", "accuracy", "pr_auc", "roc_auc", "macro_f1")})
+    row.update(changes)
+    return row
+
+
+def summary_table(**changes_of):
+    rows = [
+        summary_row("ref_model", "referencia", test_precision=np.nan),
+        summary_row("model_b", "modelo base", test_recall=1.0),
+        summary_row("model_a", "elegido"),
+        summary_row("model_a_m3", "m3", method="m3"),
+    ]
+    return pd.DataFrame([{**row, **changes_of.get(row["name"], {})} for row in rows])
+
+
+FINAL_REGISTRY = {"default_model": "model_a", "models": [{"name": "model_a"}, {"name": "model_b"}]}
+
+
+def test_final_results_summarizes_the_registered_models():
+    summary = final_results(summary_table(), FINAL_REGISTRY)
+    # Se puede escribir como JSON estricto (sin NaN).
+    assert json.loads(json.dumps(summary, allow_nan=False)) == summary
+    assert [m["name"] for m in summary["models"]] == ["model_a", "model_b"]
+    assert (summary["default_model"], summary["base_model"]) == ("model_a", "model_b")
+    assert summary["data"] == {"training_flows": 1000, "validation_flows": 100, "test_flows": 160}
+    assert summary["environment"] == {"hardware": "CPU de prueba", "sklearn_version": "1.9.1", "search_version": 3}
+    model = summary["models"][0]
+    assert model["detector"] == {"params": {"model__max_depth": 20, "model__class_weight": None}, "iterations": 50}
+    assert model["attack_type_classifier"] == {"params": {"model__max_depth": 30}, "iterations": None}
+    assert model["test"]["confusion"] == {"tp": 60, "fp": 15, "tn": 65, "fn": 20}
+    assert isinstance(model["detector"]["iterations"], int) and isinstance(model["test"]["confusion"]["tp"], int)
+    # Las métricas quedan como vienen: 1,0 sigue siendo decimal.
+    assert summary["models"][1]["test"]["recall"] == 1.0 and isinstance(summary["models"][1]["test"]["recall"], float)
+
+
+def test_final_results_lists_the_reference_models():
+    summary = final_results(summary_table(), FINAL_REGISTRY)
+    references = summary["reference_models"]
+    assert [(r["name"], r["kind"], r["method"]) for r in references] == [("ref_model", "referencia", "m2"), ("model_a_m3", "m3", "m3")]
+    assert all(list(r["validation"]) == list(r["test"]) == REFERENCE_METRICS for r in references)
+    assert references[0]["test"]["precision"] is None
+
+
+@pytest.mark.parametrize("column, value", [("hardware", "otra CPU"), ("sklearn_version", "1.8.0"), ("training_flows", 999)])
+def test_final_results_needs_the_same_environment_in_the_registered_models(column, value):
+    with pytest.raises(ValueError, match=f"no tienen el mismo valor en {column}"):
+        final_results(summary_table(model_b={column: value}), FINAL_REGISTRY)
+
+
+def test_final_results_needs_every_registered_model():
+    registry = {"default_model": "model_a", "models": [{"name": "model_a"}, {"name": "model_c"}]}
+    with pytest.raises(ValueError, match="model_c no están en test_results.csv"):
+        final_results(summary_table(), registry)
+

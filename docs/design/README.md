@@ -40,4 +40,4 @@ mantenga el mismo aspecto, el mismo contraste y la misma accesibilidad.
 | `typography-and-spacing.md` | Fuentes, tamaños, espacios, alturas, anchos de corte y movimiento |
 | `components.md` | Cada componente: uso, partes, estados y accesibilidad |
 | `icons.md` | Los 26 íconos, su significado y cómo agregar otro |
-| `screenshots/` | Las tres pantallas en claro y oscuro, en computador y celular |
+| `screenshots/` | Las tres pantallas (`console-`, `simulation-`, `models-`) y el panel de un flujo con su explicación (`panel-`), con los modelos entrenados y HistGradientBoosting elegido, en claro y oscuro (`-light`, `-dark`), en computador (1440×900) y celular (375×812), a 2× para que sirvan impresas. Muestran la muestra de demostración con etiquetas |
