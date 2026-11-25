@@ -1,0 +1,24 @@
+modelo,caso,tarea,métrica,fase,params,entrenamiento,validación,brecha
+hist_gradient_boosting (elegido),registrado,detector,PR-AUC,2,"{""model__class_weight"": null, ""model__learning_rate"": 0.1, ""model__max_iter"": 200, ""model__max_leaf_nodes"": 63, ""model__min_samples_leaf"": 20}",0.9988961164939996,0.9968308760370932,-0.00206524045690637
+hist_gradient_boosting (elegido),registrado,detector,falsas alarmas,2,"{""model__class_weight"": null, ""model__learning_rate"": 0.1, ""model__max_iter"": 200, ""model__max_leaf_nodes"": 63, ""model__min_samples_leaf"": 20}",0.0189508928571428,0.0461607142857142,0.0272098214285714
+hist_gradient_boosting (elegido),registrado,tipos,F1 macro,2,"{""model__class_weight"": ""balanced"", ""model__learning_rate"": 0.1, ""model__max_iter"": 200, ""model__max_leaf_nodes"": 63, ""model__min_samples_leaf"": 100}",0.7123292621570362,0.6185269333646868,-0.0938023287923494
+random_forest (elegido),registrado,detector,PR-AUC,2,"{""model__class_weight"": ""balanced"", ""model__max_depth"": 20, ""model__min_samples_leaf"": 5, ""model__n_estimators"": 50}",0.9986166888779876,0.9963666153050236,-0.0022500735729640287
+random_forest (elegido),registrado,detector,falsas alarmas,2,"{""model__class_weight"": ""balanced"", ""model__max_depth"": 20, ""model__min_samples_leaf"": 5, ""model__n_estimators"": 50}",0.0248883928571428,0.0525892857142857,0.0277008928571429
+random_forest (elegido),registrado,tipos,F1 macro,curve,"{""model__class_weight"": ""balanced"", ""model__max_depth"": 30, ""model__min_samples_leaf"": 1, ""model__n_estimators"": 50}",0.6989174328012953,0.6030757108839704,-0.09584172191732487
+mlp (elegido),registrado,detector,PR-AUC,2,"{""model__alpha"": 0.001, ""model__hidden_layer_sizes"": [100, 50], ""sample_weight"": ""balanced""}",0.99691137612459,0.9958709633370012,-0.001040412787588818
+mlp (elegido),registrado,detector,falsas alarmas,2,"{""model__alpha"": 0.001, ""model__hidden_layer_sizes"": [100, 50], ""sample_weight"": ""balanced""}",0.0508928571428571,0.0623214285714285,0.011428571428571399
+mlp (elegido),registrado,tipos,F1 macro,2,"{""model__alpha"": 0.001, ""model__hidden_layer_sizes"": [64], ""sample_weight"": null}",0.5603578229011986,0.5649041238717072,0.0045463009705085655
+logistic_regression (modelo base),modelo base,detector,PR-AUC,1,{},0.9927669839278652,0.9930072869016684,0.00024030297380317478
+logistic_regression (modelo base),modelo base,detector,falsas alarmas,1,{},0.0908482142857142,0.0895535714285714,-0.0012946428571427998
+logistic_regression (modelo base),modelo base,tipos,F1 macro,1,{},0.4189263762293952,0.4145433888998096,-0.004382987329585641
+decision_tree por defecto,sobreentrenado,detector,PR-AUC,1,{},0.9999950656535608,0.9473263452731508,-0.05266872038040993
+decision_tree por defecto,sobreentrenado,detector,falsas alarmas,1,{},0.0,0.0858035714285714,0.0858035714285714
+decision_tree por defecto,sobreentrenado,tipos,F1 macro,1,{},0.7629635621679679,0.6061799000879124,-0.15678366208005545
+random_forest por defecto,sobreentrenado,detector,PR-AUC,1,{},0.9999840201364842,0.99606493556485,-0.003919084571634257
+random_forest por defecto,sobreentrenado,detector,falsas alarmas,1,{},0.00140625,0.05,0.048593750000000005
+random_forest por defecto,sobreentrenado,tipos,F1 macro,1,{},0.7686913011556333,0.5885662429209838,-0.18012505823464953
+extra_trees por defecto,sobreentrenado,detector,PR-AUC,1,{},0.9999950656535608,0.9956021157794188,-0.00439294987414196
+extra_trees por defecto,sobreentrenado,detector,falsas alarmas,1,{},0.00171875,0.0549107142857142,0.053191964285714204
+extra_trees por defecto,sobreentrenado,tipos,F1 macro,1,{},0.7629635621679679,0.5755602139877322,-0.18740334818023574
+extra_trees sin límite de profundidad,sobreentrenado,detector,PR-AUC,curve,"{""model__class_weight"": ""balanced"", ""model__max_depth"": null, ""model__min_samples_leaf"": 1, ""model__n_estimators"": 50}",0.999995148835235,0.9952996749668582,-0.004695473868376765
+extra_trees sin límite de profundidad,sobreentrenado,detector,falsas alarmas,curve,"{""model__class_weight"": ""balanced"", ""model__max_depth"": null, ""model__min_samples_leaf"": 1, ""model__n_estimators"": 50}",0.0005133928571428,0.0584821428571428,0.05796875

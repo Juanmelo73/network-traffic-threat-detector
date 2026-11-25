@@ -1,21 +1,26 @@
-"""Pruebas de ml/evaluation.py: umbral de alerta y métricas, con datos escritos a mano y resultado conocido."""
+"""Pruebas de ml/evaluation.py: umbral de alerta, métricas y errores inevitables, con datos escritos a mano y resultado conocido."""
 
 import json
 import math
 from fractions import Fraction
 
 import numpy as np
+import pandas as pd
 import pytest
 
 from threat_detector.artifacts import detection_rate, is_alert
 from threat_detector.config import TARGET_RECALL
-from threat_detector.dataset import ATTACK_TYPES
+from threat_detector.dataset import ATTACK_CAT, ATTACK_TYPES, NORMAL_CAT, TARGET
 from threat_detector.ml.evaluation import (
+    TOTAL_ROW,
     attack_type_metrics,
     compute_threshold,
     detection_metrics,
+    label_mixed_groups,
     threshold_rule,
+    unavoidable_type_errors,
 )
+from threat_detector.ml.preprocessing import flow_pattern_ids
 
 # 20 ataques con probabilidades 0,05 a 1,00 (redondeadas a 2 decimales, para que el punto flotante
 # no cambie los valores esperados) y 10 normales: 6 con probabilidad ≥ 0,1 y 4 por debajo.
@@ -207,3 +212,71 @@ def test_attack_type_metrics_without_evaluated_flows():
 def test_attack_type_metrics_errors(true_cats, predicted_cats, alerts, message):
     with pytest.raises(ValueError, match=message):
         attack_type_metrics(true_cats, predicted_cats, alerts)
+
+
+# Errores inevitables
+
+# Grupos de flujos idénticos escritos a mano: cada grupo copia las variables de una fila distinta
+# de sample_flows.csv y le pone estas etiquetas.
+GROUPS = [
+    ["DoS", "DoS", "DoS", "Exploits"],            # 1 error seguro de Exploits
+    ["Analysis", "Analysis", "Backdoor", "Backdoor"],  # empate: 4 flujos empatados, 2 errores mínimos
+    ["Generic", "Generic"],                       # un solo tipo: no es un grupo mezclado
+    [NORMAL_CAT, NORMAL_CAT, "Fuzzers"],          # mezcla normales y un ataque
+    ["Shellcode"],                                # flujo que no se repite
+]
+
+
+@pytest.fixture
+def grouped_flows(sample_flows):
+    rows = []
+    for position, labels in enumerate(GROUPS):
+        for attack_cat in labels:
+            row = sample_flows.iloc[position].copy()
+            row[ATTACK_CAT] = attack_cat
+            row[TARGET] = int(attack_cat != NORMAL_CAT)
+            rows.append(row)
+    flows = pd.DataFrame(rows).reset_index(drop=True)
+    # Cada grupo debe ser un patrón distinto.
+    assert flow_pattern_ids(flows).nunique() == len(GROUPS)
+    return flows
+
+
+def test_unavoidable_type_errors_with_known_groups(grouped_flows):
+    table = unavoidable_type_errors(grouped_flows).set_index("attack_cat")
+
+    assert list(table.index) == [*ATTACK_TYPES, TOTAL_ROW]
+    expected = {
+        # tipo: (flows, mixed_group_flows, certain_errors, tied_flows)
+        "DoS": (3, 3, 0, 0),
+        "Exploits": (1, 1, 1, 0),
+        "Analysis": (2, 2, 0, 2),
+        "Backdoor": (2, 2, 0, 2),
+        "Generic": (2, 0, 0, 0),
+        "Fuzzers": (1, 0, 0, 0),
+        "Shellcode": (1, 0, 0, 0),
+        "Reconnaissance": (0, 0, 0, 0),
+        "Worms": (0, 0, 0, 0),
+        TOTAL_ROW: (12, 8, 1, 4),
+    }
+    for attack_cat, values in expected.items():
+        assert tuple(table.loc[attack_cat, ["flows", "mixed_group_flows", "certain_errors", "tied_flows"]]) == values
+    assert table.loc["Exploits", "certain_error_rate"] == 1.0
+    assert pd.isna(table.loc["Worms", "certain_error_rate"])
+    # Mínimo exacto: 1 Exploits en el primer grupo y 2 en el empate.
+    assert table.loc[TOTAL_ROW, "min_errors"] == 3
+    assert table.loc[ATTACK_TYPES, "min_errors"].isna().all()
+
+
+def test_label_mixed_groups_with_known_groups(grouped_flows):
+    table = label_mixed_groups(grouped_flows)
+    assert table.to_dict("records") == [
+        {"groups": 1, "flows": 3, "min_errors": 1, "share_of_flows": 3 / len(grouped_flows)}
+    ]
+
+
+def test_without_mixed_groups_everything_is_zero(sample_flows):
+    flows = sample_flows.drop_duplicates(subset=sample_flows.columns.drop(["id", TARGET, ATTACK_CAT]))
+    assert label_mixed_groups(flows).loc[0, ["groups", "flows", "min_errors"]].tolist() == [0, 0, 0]
+    total = unavoidable_type_errors(flows).set_index("attack_cat").loc[TOTAL_ROW]
+    assert (total["mixed_group_flows"], total["certain_errors"], total["tied_flows"], total["min_errors"]) == (0, 0, 0, 0)

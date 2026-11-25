@@ -9,9 +9,12 @@ import sys
 
 import joblib
 import numpy as np
+import pandas as pd
 import pytest
 import sklearn
 from conftest import read_json, write_json
+from sklearn.pipeline import Pipeline
+from sklearn.tree import DecisionTreeClassifier
 
 from threat_detector.artifacts import (
     ArtifactError,
@@ -27,8 +30,9 @@ from threat_detector.artifacts import (
     read_registry,
     severity,
 )
-from threat_detector.config import MODEL_JOBLIB, MODEL_JSON, MODELS_DIR, RANDOM_STATE, REGISTRY_PATH
-from threat_detector.dataset import ATTACK_TYPES, NORMAL_CAT
+from threat_detector.config import DEMO_SAMPLE_CSV, MODEL_JOBLIB, MODEL_JSON, MODELS_DIR, RANDOM_STATE, REGISTRY_PATH
+from threat_detector.dataset import ATTACK_CAT, ATTACK_TYPES, NORMAL_CAT, TARGET
+from threat_detector.ml.preprocessing import build_preprocessor
 from threat_detector.ml.training import export_model
 
 # Alerta y severidad
@@ -287,6 +291,24 @@ def json_m3_with_joblib_m2(folder, tmp_path, monkeypatch):
     edit_info(folder, name="broken", detector_type="binary")
 
 
+def classifier_fitted_on_attacks(folder, tmp_path, monkeypatch):
+    """Cambia el clasificador de model_a por uno cuyo preprocesador se ajustó solo con los ataques.
+
+    Con sample_flows.csv pierde proto_arp, que solo tienen los flujos normales.
+    """
+    flows = pd.read_csv(DEMO_SAMPLE_CSV)
+    attacks = flows[flows[TARGET] == 1]
+    classifier = Pipeline([("preprocessor", build_preprocessor("m2")), ("model", DecisionTreeClassifier(max_depth=3))])
+    model = joblib.load(folder / MODEL_JOBLIB)
+    model["attack_type_classifier"] = classifier.fit(attacks, attacks[ATTACK_CAT])
+    joblib.dump(model, folder / MODEL_JOBLIB)
+
+
+def feature_groups_without_proto_tcp(folder, tmp_path, monkeypatch):
+    groups = read_json(folder / MODEL_JSON)["feature_groups"]
+    edit_info(folder, feature_groups={**groups, "proto": [c for c in groups["proto"] if c != "proto_tcp"]})
+
+
 LOAD_ERRORS = [
     # (id, carpeta de origen, cómo se daña, mensaje esperado, tipo de la causa original)
     ("missing_json", "model_a", lambda f, *_: (f / MODEL_JSON).unlink(), "Falta models/broken/model.json", None),
@@ -312,6 +334,11 @@ LOAD_ERRORS = [
     ("missing_library", "model_a", missing_library, "falta la librería fake_library_for_tests", ModuleNotFoundError),
     ("json_m3_with_joblib_m2", "model_a", json_m3_with_joblib_m2,
      "a numeric_cols le falta ct_state_ttl, dttl, sttl", None),
+    ("classifier_lost_categories", "model_a", classifier_fitted_on_attacks,
+     "el preprocesador de attack_type_classifier no da las mismas columnas que el del detector: le faltan proto_arp",
+     None),
+    ("feature_groups_mismatch", "model_a", feature_groups_without_proto_tcp,
+     "a feature_groups, comparado con las columnas preparadas del modelo, le faltan proto_tcp", None),
 ]
 
 

@@ -431,9 +431,9 @@ def test_new_ids_are_twelve_hex_characters_and_unique():
 
 
 @pytest.fixture
-def client():
-    """La app con el artifacts/ real (solo el modelo simulado); with hace que corra el lifespan."""
-    with TestClient(create_app()) as test_client:
+def client(mock_artifacts):
+    """La app con solo el modelo simulado registrado; with hace que corra el lifespan."""
+    with TestClient(create_app(mock_artifacts)) as test_client:
         yield test_client
 
 
@@ -472,12 +472,12 @@ def test_uploaded_file_gives_the_same_flows_as_the_sample(client, sample_flows):
     assert {**body, "analysis_id": None} == {**sample, "analysis_id": None}
 
 
-def test_get_analysis_returns_what_predict_returned(client, sample_flows):
+def test_get_analysis_returns_what_predict_returned(client, sample_flows, mock_artifacts):
     created = upload(client, csv_bytes(sample_flows), use_labels="false").json()
     assert client.get(f"/api/analysis/{created['analysis_id']}").json() == created
     sample = client.post("/api/predict", data={"use_sample": "true"}).json()
     # Un servidor recién iniciado regenera la muestra.
-    with TestClient(create_app()) as fresh:
+    with TestClient(create_app(mock_artifacts)) as fresh:
         assert fresh.get("/api/analysis/sample-mock").json() == sample
 
 
@@ -613,11 +613,11 @@ def test_damaged_form_is_an_invalid_request(client):
                                        "message": "El pedido no es válido."}
 
 
-def test_unexpected_errors_hide_the_python_error(sample_flows):
+def test_unexpected_errors_hide_the_python_error(sample_flows, mock_artifacts):
     def broken_predict(flows):
         raise RuntimeError("detalle interno")
 
-    with TestClient(create_app(), raise_server_exceptions=False) as test_client:
+    with TestClient(create_app(mock_artifacts), raise_server_exceptions=False) as test_client:
         test_client.app.state.predictors["mock"].predict = broken_predict
         response = upload(test_client, csv_bytes(sample_flows))
     error = error_of(response, 500)
@@ -1005,10 +1005,10 @@ def free_port():
 
 
 @pytest.fixture(scope="module")
-def live_server():
-    """La app corriendo con Uvicorn en un puerto libre, con el artifacts/ real."""
+def live_server(mock_artifacts):
+    """La app corriendo con Uvicorn en un puerto libre, con solo el modelo simulado registrado."""
     port = free_port()
-    server = uvicorn.Server(uvicorn.Config(create_app(), host="127.0.0.1", port=port, log_level="warning"))
+    server = uvicorn.Server(uvicorn.Config(create_app(mock_artifacts), host="127.0.0.1", port=port, log_level="warning"))
     thread = threading.Thread(target=server.run, daemon=True)
     thread.start()
     for _ in range(100):
@@ -1218,6 +1218,16 @@ def test_direct_link_to_a_flow(page):
     page.goto("/index.html?analysis=sample-mock&flow=999999999")
     page.locator(".drawer [role=alert]").wait_for()
     assert "El flujo 999999999 no está en este análisis." in page.locator(".drawer").inner_text()
+
+
+def test_panel_says_when_the_model_does_not_explain(page):
+    # Como responde /api/explain un modelo sin explicación (por ejemplo, la red neuronal): can_explain = false.
+    flow = api_json(page, "/api/analysis/sample-mock")["flows"][0]
+    response = {"analysis_id": "sample-mock", "flow": flow, "can_explain": False, "contributions": None}
+    page.route("**/api/explain/**", lambda route: route.fulfill(json=response))
+    page.goto(f"/index.html?analysis=sample-mock&flow={flow['id']}")
+    page.get_by_text("Este modelo no explica sus decisiones.").wait_for()
+    assert page.locator(".expl-list li").count() == 0
 
 
 def test_link_to_a_missing_analysis(page):
@@ -1521,7 +1531,7 @@ def test_models_page_with_the_mock_model(page):
     card = page.locator(".model-card")
     assert "Simulado" in card.inner_text() and "Métricas inventadas." in card.inner_text()
     assert "En uso en la consola y la simulación" in card.inner_text()
-    assert compare_cells(page, "Detección") == [percent(d["detection_rate"])]
+    assert compare_cells(page, "Detección (recall)") == [percent(d["detection_rate"])]
     assert compare_cells(page, "PR-AUC") == [score(d["pr_auc"])]
     assert compare_cells(page, "F1 macro (9 tipos)") == [score(metrics["attack_type"]["macro_f1"])]
     assert compare_cells(page, "Tiempo de entrenamiento") == ["No aplica"]
@@ -1569,7 +1579,7 @@ def test_best_values_and_choosing_a_model(page):
     columns = ["mock", "model_a", "model_b"]
     best = lambda label: [columns[i] for i, td in enumerate(compare_row(page, label).locator("td").all()[1:])
                           if "best" in (td.get_attribute("class") or "")]
-    assert best("Detección") == ["model_a"]
+    assert best("Detección (recall)") == ["model_a"]
     assert best("Falsas alarmas") == ["model_a", "model_b"]
     assert best("Precisión") == ["model_b"]
     assert compare_cells(page, "Precisión")[1] == "—"

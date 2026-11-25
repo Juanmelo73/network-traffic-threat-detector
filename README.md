@@ -44,6 +44,7 @@ Los datos pasan por las partes en este orden: `data/raw/` → `ml/` → `artifac
 | `02_data_splits.ipynb` | Rutas, parámetros, carga de los datos, separación de entrenamiento y validación, y muestra de demostración |
 | `03_preprocessing.ipynb` | Validación de flujos y los tres métodos de preprocesamiento |
 | `04_threshold_and_artifacts.ipynb` | Umbral de alerta, severidad, métricas y formato de los modelos exportados |
+| `05_models.ipynb` | Búsqueda de modelos en validación: barrido de las familias con sus valores por defecto, búsqueda de hiperparámetros y tablas para el artículo, en `artifacts/model_search/` |
 
 ## Instalación
 

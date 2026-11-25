@@ -271,12 +271,56 @@ def _input_columns(preprocessor):
     return columns
 
 
+def _column_differences(expected, found):
+    """Texto con las columnas que le faltan y las que le sobran a found respecto de expected."""
+    parts = []
+    lacking = sorted(set(expected) - set(found))
+    extra = sorted(set(found) - set(expected))
+    if lacking:
+        parts.append(f"le faltan {', '.join(lacking)}")
+    if extra:
+        parts.append(f"le sobran {', '.join(extra)}")
+    return "; ".join(parts) or "tienen las mismas columnas, pero no las mismas veces"
+
+
+def _check_prepared_columns(model, info, name, where):
+    """Los dos Pipeline deben dar las mismas columnas preparadas, que son las de feature_groups.
+
+    Un clasificador cuyo preprocesador se ajustó solo con los ataques pierde las categorías que
+    solo tienen los flujos normales (por ejemplo, proto_arp), y las contribuciones de feature_groups
+    no le corresponderían (contrato, sección 10).
+    """
+    prepared = {}
+    for key in ("detector", "attack_type_classifier"):
+        try:
+            prepared[key] = list(model[key]["preprocessor"].get_feature_names_out())
+        except (AttributeError, ValueError) as error:
+            raise ArtifactError(
+                f"En {where}, el preprocesador de {key} no está ajustado: {error}"
+            ) from error
+
+    if sorted(prepared["attack_type_classifier"]) != sorted(prepared["detector"]):
+        raise ArtifactError(
+            f"En {where}, el preprocesador de attack_type_classifier no da las mismas columnas que "
+            f"el del detector: {_column_differences(prepared['detector'], prepared['attack_type_classifier'])}. "
+            "Ajusta los dos preprocesadores con todos los flujos de entrenamiento."
+        )
+    grouped = [column for columns in info["feature_groups"].values() for column in columns]
+    if sorted(grouped) != sorted(prepared["detector"]):
+        raise ArtifactError(
+            f"El {MODEL_JSON} de {name} no corresponde a su {MODEL_JOBLIB}: a feature_groups, "
+            f"comparado con las columnas preparadas del modelo, {_column_differences(prepared['detector'], grouped)}."
+        )
+
+
 def check_model(model, info, name):
     """Comprueba que el contenido de model.joblib cumple el contrato (sección 10) y corresponde a su model.json.
 
     Revisa las dos claves, los pasos de cada Pipeline, que cada preprocesador use exactamente las
-    columnas de numeric_cols y categorical_cols, y que las clases sean las que se buscan por
-    nombre: 1 o "Normal" en el detector, según detector_type, y los 9 tipos en el clasificador.
+    columnas de numeric_cols y categorical_cols, que los dos Pipeline den las mismas columnas
+    preparadas y que sean exactamente las de feature_groups, y que las clases sean las que se
+    buscan por nombre: 1 o "Normal" en el detector, según detector_type, y los 9 tipos en el
+    clasificador.
     """
     where = _where(name, MODEL_JOBLIB)
     if not isinstance(model, dict) or set(model) != MODEL_KEYS:
@@ -320,6 +364,8 @@ def check_model(model, info, name):
             raise ArtifactError(
                 f"El {MODEL_JSON} de {name} no corresponde a su {MODEL_JOBLIB} ({key}): {'; '.join(problems)}."
             )
+
+    _check_prepared_columns(model, info, name, where)
 
     wanted = {
         "detector": [1 if info["detector_type"] == "binary" else NORMAL_CAT],

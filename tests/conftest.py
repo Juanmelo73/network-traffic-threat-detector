@@ -7,6 +7,7 @@ saltan solas si falta el archivo y quedan marcadas con "dataset".
 
 import json
 import re
+import shutil
 from datetime import datetime, timedelta, timezone
 
 import pandas as pd
@@ -91,6 +92,21 @@ def read_json(path):
 
 
 @pytest.fixture(scope="session")
+def mock_artifacts(tmp_path_factory):
+    """Un artifacts/ temporal con solo el modelo simulado registrado (el ejemplo de la sección 12).
+
+    Las pruebas de la app y del navegador la arrancan con esta carpeta: así siguen probando con el
+    simulado aunque el artifacts/ real tenga los modelos entrenados. Copia el model.json real del
+    simulado, que se conserva en artifacts/models/mock/.
+    """
+    folder = tmp_path_factory.mktemp("mock_artifacts")
+    (folder / MODELS_DIR.name / "mock").mkdir(parents=True)
+    shutil.copy(MODELS_DIR / "mock" / MODEL_JSON, folder / MODELS_DIR.name / "mock" / MODEL_JSON)
+    write_json(folder / REGISTRY_PATH.name, {"default_model": "mock", "models": [{"name": "mock"}]})
+    return folder
+
+
+@pytest.fixture(scope="session")
 def sample_flows_once():
     """sample_flows.csv leído una sola vez por sesión; las pruebas no deben modificarlo."""
     return pd.read_csv(DEMO_SAMPLE_CSV)
@@ -140,6 +156,15 @@ def _tiny_tree():
     return DecisionTreeClassifier(max_depth=TINY_TREE_DEPTH, random_state=RANDOM_STATE)
 
 
+def _tiny_attack_pipeline(method, estimator, flows):
+    """Clasificador de prueba hecho como pide el contrato (sección 10): el preprocesador se ajusta con
+    todos los flujos y el estimador aprende solo con los ataques."""
+    attacks = flows[flows[TARGET] == 1]
+    preprocessor = build_preprocessor(method).fit(flows)
+    estimator.fit(preprocessor.transform(attacks), attacks[ATTACK_CAT])
+    return Pipeline([("preprocessor", preprocessor), ("model", estimator)])
+
+
 @pytest.fixture(scope="session")
 def tiny_models(sample_flows_once):
     """Modelos de prueba diminutos entrenados con sample_flows.csv; no son modelos del proyecto.
@@ -150,9 +175,8 @@ def tiny_models(sample_flows_once):
     Cada forma trae su umbral, calculado con compute_threshold sobre los mismos flujos.
     """
     flows = sample_flows_once
-    attacks = flows[flows[TARGET] == 1]
     detector = _tiny_pipeline("m2", LogisticRegression(max_iter=1000)).fit(flows, flows[TARGET])
-    classifier_9 = _tiny_pipeline("m2", _tiny_tree()).fit(attacks, attacks[ATTACK_CAT])
+    classifier_9 = _tiny_attack_pipeline("m2", _tiny_tree(), flows)
     classifier_10 = _tiny_pipeline("m2", _tiny_tree()).fit(flows, flows[ATTACK_CAT])
     multiclass = _tiny_pipeline("m3", _tiny_tree()).fit(flows, flows[ATTACK_CAT])
 
