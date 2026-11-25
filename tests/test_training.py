@@ -51,6 +51,8 @@ from threat_detector.ml.training import (
     read_search_results,
     final_model_specs,
     hardware_description,
+    oob_comparison,
+    oob_per_type,
     register_model,
     run_search,
     select_candidates,
@@ -1055,6 +1057,49 @@ def test_final_model_that_does_not_reproduce_its_row_is_not_evaluated(final_run,
     table_path = output_dir / "test_results.csv"
     names = list(pd.read_csv(table_path)["name"]) if table_path.is_file() else []
     assert "decision_tree" not in names
+
+
+
+def test_oob_per_type_matches_the_search_row_and_the_oob_macro_f1(final_search):
+    path, train, validation, _ = final_search
+    results = read_search_results(path)
+    final = training_module.apply_simplicity_rule(
+        results, select_candidates(results, phases=[1, 2], max_size_mb=MAX_MODEL_SIZE_MB), max_size_mb=MAX_MODEL_SIZE_MB
+    )
+    table = oob_per_type(results, final, train)
+    summary = oob_comparison(results, final, train).set_index("task")
+
+    assert list(table["attack_cat"]) == list(training_module.ATTACK_TYPES)
+    row = results.loc[int(final.set_index("family").loc["random_forest", "classifier_row"])]
+    for metric in ("precision", "recall", "f1", "support"):
+        expected = [row[f"{t.lower()}_{metric}"] for t in table["attack_cat"]]
+        np.testing.assert_allclose(table[f"validation_{metric}"].astype(float), np.array(expected, dtype=float), equal_nan=True)
+    # El F1 macro fuera de la bolsa es el promedio de los F1 por tipo que se pueden calcular.
+    assert summary.loc["attack_type", "oob"] == pytest.approx(table["oob_f1"].dropna().mean())
+    # Solo cuentan los flujos con al menos un árbol fuera de la bolsa.
+    assert (table["oob_support"] == table["train_flows"] - table["flows_without_oob"]).all()
+    assert table["train_flows"].sum() == int((train[TARGET] == 1).sum())
+    assert summary.loc["attack_type", "flows_without_oob"] == table["flows_without_oob"].sum()
+    assert ((0 <= table["oob_trees_mean"]) & (table["oob_trees_mean"] <= table["trees"])).all()
+    np.testing.assert_allclose(table["f1_difference"], table["oob_f1"] - table["validation_f1"])
+
+
+def test_flows_without_out_of_bag_trees_are_not_measured(final_search):
+    # Con class_weight, scikit-learn sortea la bolsa según el peso de cada flujo, y un flujo puede
+    # quedar en la bolsa de todos los árboles; su fila de oob_decision_function_ queda en ceros.
+    path, train, _, _ = final_search
+    results = read_search_results(path)
+    final = training_module.apply_simplicity_rule(
+        results, select_candidates(results, phases=[1, 2], max_size_mb=MAX_MODEL_SIZE_MB), max_size_mb=MAX_MODEL_SIZE_MB
+    )
+    choice = final.set_index("family").loc["random_forest"].to_dict()
+    row = results.loc[int(choice["classifier_row"])]
+    results = results.copy()
+    results.loc[int(choice["classifier_row"]), "params"] = json.dumps({**json.loads(row["params"]), "model__class_weight": "balanced"})
+    _, _, _, oob, covered, out_of_bag = training_module._fit_oob(results, choice, "random_forest", "attack_type", train)
+    assert (~covered).any(), "la prueba necesita flujos sin árboles fuera de la bolsa"
+    np.testing.assert_array_equal(covered, out_of_bag > 0)
+    np.testing.assert_array_equal(~covered, oob.sum(axis=1) == 0)
 
 
 # build_model_info

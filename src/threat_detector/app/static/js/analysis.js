@@ -5,7 +5,7 @@ import {
   ALERT_SEVERITIES, SEVERITIES, attackType, closeFlowPanel, copyLink, errorNotice, featureName,
   fetchAnalysis, flowResult, formatDecimal, formatInt, formatPercent, getChosenModel, h, icon,
   initPage, initRadioGroup, isMockModel, isSampleAnalysis, kpiCard, mockNotice, modelName, openFlowPanel,
-  predict, probability, rateTips, severityBadge,
+  predict, probability, rateTips, severityBadge, formatValue, valueTitle, isLabeledSample, sampleAnalysisId,
 } from './common.js';
 
 const PAGE_SIZE = 25;
@@ -103,8 +103,19 @@ async function analyze({ file = null, useSample = false, useLabels = true }) {
   }
 }
 
+// La muestra sigue al modelo elegido: si el análisis pedido es la muestra de otro modelo, se abre la
+// del modelo elegido, en el mismo modo (con o sin etiquetas). Los id de los flujos son los mismos en
+// todas las muestras, así que &flow= sigue abriendo el mismo flujo. Un archivo subido no cambia:
+// no se puede volver a analizar sin el archivo.
+function followChosenModel(analysisId) {
+  const chosen = state.models ? getChosenModel(state.models) : null;
+  if (!chosen || !isSampleAnalysis(analysisId)) return analysisId;
+  return sampleAnalysisId(chosen.name, isLabeledSample(analysisId));
+}
+
 // Abre un análisis ya hecho: por enlace (?analysis=) o el último de la pestaña.
-async function loadFromLink(analysisId, flowParam) {
+async function loadFromLink(requestedId, flowParam) {
+  const analysisId = followChosenModel(requestedId);
   setBusy(true);
   // El nombre del archivo solo lo conoce esta pestaña: se recupera si es el mismo análisis.
   const last = readLastAnalysis();
@@ -176,11 +187,31 @@ function showAnalysis(analysis) {
   renderBar();
   const mock = isMockModel(state.models, analysis.model.name) === true;
   $('mockSlot').replaceChildren(...(mock ? [mockNotice()] : []));
+  renderModelNotice();
   renderKpis();
   $('sampleNote').hidden = !isSample(analysis);
   renderFilterCounts();
   renderQueue();
   $('results').hidden = false;
+}
+
+// Elegir otro modelo no cambia un archivo ya analizado (la muestra sí cambia: followChosenModel).
+// Si el análisis abierto se hizo con un modelo distinto del elegido, el título del resumen dice con
+// qué modelo se hizo y un aviso explica cómo analizarlo con el elegido.
+function renderModelNotice() {
+  const a = state.analysis;
+  const chosen = state.models ? getChosenModel(state.models) : null;
+  const other = chosen !== null && chosen.name !== a.model.name;
+  $('h-summary').textContent = 'Resumen del análisis' + (other ? ' con ' + a.model.display_name : '');
+  if (!other) {
+    $('modelSlot').replaceChildren();
+    return;
+  }
+  $('modelSlot').replaceChildren(h('div', { class: 'notice notice-info', role: 'note' }, icon('info'),
+    h('div', { class: 'stack' },
+      h('p', {}, 'Este análisis se hizo con ', h('strong', {}, a.model.display_name),
+        '. El modelo elegido ahora es ', h('strong', {}, chosen.display_name), ': los análisis nuevos lo usarán.'),
+      h('p', {}, 'Para analizarlo con ' + chosen.display_name + ', vuelve a cargar el archivo.'))));
 }
 
 function renderBar() {
@@ -260,7 +291,7 @@ function renderHead() {
 
 function renderRow(flow) {
   const labels = state.analysis.has_labels;
-  const empty = (v) => (v === null ? h('span', { class: 'cell-empty' }, 'vacío') : v);
+  const empty = (v, feature) => (v === null ? h('span', { class: 'cell-empty' }, 'vacío') : formatValue(v, feature));
   const row = h('tr', {
     tabindex: '0', 'data-id': String(flow.id), 'aria-label': 'Flujo ' + flow.id + ', ' + SEVERITIES[flow.severity].label,
     class: flow.id === state.selectedId ? 'is-selected' : null,
@@ -269,7 +300,7 @@ function renderRow(flow) {
   h('td', { class: 'num' }, probability(flow)),
   h('td', {}, severityBadge(flow.severity)),
   h('td', {}, flow.predicted_attack_cat ? attackType(flow.predicted_attack_cat) : h('span', { class: 'cell-empty' }, '—')),
-  h('td', { class: 'cat' }, empty(flow.proto)),
+  h('td', { class: 'cat', title: valueTitle(flow.proto, 'proto') }, empty(flow.proto, 'proto')),
   h('td', { class: 'cat' }, empty(flow.service)),
   h('td', { class: 'cat' }, empty(flow.state)),
   labels ? [
@@ -392,5 +423,11 @@ async function start() {
     if (last && last.analysisId) loadFromLink(last.analysisId, null);
   }
 }
+
+// Al volver con «Atrás», el navegador puede mostrar la página guardada sin ejecutarla de nuevo
+// (bfcache): se recarga para que la muestra y la cabecera sigan al modelo elegido.
+window.addEventListener('pageshow', (event) => {
+  if (event.persisted) window.location.reload();
+});
 
 start();

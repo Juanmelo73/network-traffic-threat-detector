@@ -45,6 +45,7 @@ Los datos pasan por las partes en este orden: `data/raw/` → `ml/` → `artifac
 | `03_preprocessing.ipynb` | Validación de flujos y los tres métodos de preprocesamiento |
 | `04_threshold_and_artifacts.ipynb` | Umbral de alerta, severidad, métricas y formato de los modelos exportados |
 | `05_models.ipynb` | Búsqueda de modelos en validación: barrido de las familias con sus valores por defecto, búsqueda de hiperparámetros y tablas para el artículo, en `artifacts/model_search/` |
+| `06_final_training.ipynb` | Entrenamiento final: entrena los modelos elegidos y los de referencia, los evalúa una sola vez en la partición de prueba y registra en la app los 4 modelos |
 
 ## Instalación
 
@@ -74,6 +75,25 @@ Los CSV de UNSW-NB15 no están en el repositorio. [data/README.md](data/README.m
 
 La muestra de demostración de la aplicación (`src/threat_detector/app/static/sample_flows.csv`, 500 flujos) sí está en el repositorio.
 
+## Modelos
+
+La aplicación tiene 4 modelos. Los 3 primeros se eligieron con la parte de validación, entre 8 familias de scikit-learn y sus hiperparámetros, dentro de 50 MB por modelo; la regresión logística es el modelo base. Cada modelo tiene dos partes: un **detector** (normal o ataque) y un **clasificador del tipo de ataque**.
+
+Métricas en la partición oficial de prueba (82.332 flujos), usada una sola vez después de elegir los modelos:
+
+| Modelo | Preprocesamiento | Recall (detección) | Falsas alarmas | Precisión | F1 | PR-AUC | F1 macro de tipos |
+|---|---|---|---|---|---|---|---|
+| HistGradientBoosting (por defecto) | M1 | 96,5 % | 16,5 % | 87,7 % | 0,919 | 0,988 | 0,560 |
+| Random Forest | M2 | 97,1 % | 16,9 % | 87,5 % | 0,921 | 0,989 | 0,540 |
+| Red neuronal (MLP) | M2 | 96,2 % | 19,4 % | 85,9 % | 0,907 | 0,984 | 0,462 |
+| Regresión logística (modelo base) | M2 | 94,5 % | 24,6 % | 82,5 % | 0,881 | 0,972 | 0,366 |
+
+- El umbral de alerta de cada modelo se calculó con la validación, para detectar al menos el 95 % de los ataques; en prueba, el recall queda un poco arriba o abajo de ese valor.
+- El F1 macro de tipos se mide sobre los ataques reales que dieron alerta.
+- HistGradientBoosting, Random Forest y la regresión logística explican cada decisión con la contribución de cada variable; la red neuronal no.
+
+La búsqueda de modelos está en `notebooks/05_models.ipynb`; el entrenamiento final, la evaluación en prueba y el registro, en `notebooks/06_final_training.ipynb`. Los resultados completos, con las tablas y figuras para el artículo, están en `artifacts/model_search/` (ver su `README.md`).
+
 ## Arrancar la aplicación
 
 Desde la raíz del repositorio:
@@ -97,10 +117,9 @@ Terminado:
 5. **Umbral y métricas:** umbral de alerta calculado con la validación (detección mínima del 95 %), severidad y métricas de evaluación.
 6. **Artefactos:** exportación, registro y carga de los modelos, y un modelo simulado que permite programar la aplicación antes de tener modelos reales.
 7. **Pruebas automatizadas** con pytest (`uv run pytest`).
-8. **Backend:** API con FastAPI que analiza archivos CSV, explica la decisión sobre cada flujo, entrega los modelos y sus métricas, y reproduce un análisis flujo por flujo. Por ahora usa el modelo simulado.
+8. **Backend:** API con FastAPI que analiza archivos CSV, explica la decisión sobre cada flujo, entrega los modelos y sus métricas, y reproduce un análisis flujo por flujo.
 9. **Frontend:** consola, simulación con animación y comparación de modelos, en HTML, CSS y JavaScript sin frameworks, en modo claro y oscuro.
-
-Pendiente: el entrenamiento y la evaluación de los modelos reales.
+10. **Modelos:** búsqueda en validación de 8 familias de modelos y sus hiperparámetros, entrenamiento final, evaluación en la partición de prueba y registro de los 4 modelos de la aplicación (ver [Modelos](#modelos)).
 
 ## Autores
 

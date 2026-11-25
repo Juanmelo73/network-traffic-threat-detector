@@ -1,0 +1,415 @@
+{
+  "name": "logistic_regression",
+  "display_name": "Regresión logística (modelo base)",
+  "is_mock": false,
+  "trained_at": "2026-11-25T00:26:21Z",
+  "sklearn_version": "1.9.1",
+  "detector_type": "binary",
+  "preprocessing_method": "m2",
+  "use_ttl": true,
+  "numeric_cols": [
+    "dur",
+    "spkts",
+    "dpkts",
+    "sbytes",
+    "dbytes",
+    "rate",
+    "sttl",
+    "dttl",
+    "sload",
+    "dload",
+    "sloss",
+    "dloss",
+    "sinpkt",
+    "dinpkt",
+    "sjit",
+    "djit",
+    "synack",
+    "ackdat",
+    "smean",
+    "dmean",
+    "trans_depth",
+    "response_body_len",
+    "ct_srv_src",
+    "ct_state_ttl",
+    "ct_dst_ltm",
+    "ct_src_dport_ltm",
+    "ct_dst_sport_ltm",
+    "ct_dst_src_ltm",
+    "ct_ftp_cmd",
+    "ct_flw_http_mthd",
+    "ct_src_ltm",
+    "ct_srv_dst"
+  ],
+  "categorical_cols": [
+    "proto",
+    "service",
+    "state"
+  ],
+  "log_cols": [
+    "dur",
+    "spkts",
+    "dpkts",
+    "sbytes",
+    "dbytes",
+    "rate",
+    "sload",
+    "dload",
+    "sloss",
+    "dloss",
+    "sinpkt",
+    "dinpkt",
+    "sjit",
+    "djit",
+    "dmean",
+    "response_body_len",
+    "ct_srv_src",
+    "ct_dst_ltm",
+    "ct_dst_src_ltm",
+    "ct_src_ltm",
+    "ct_srv_dst"
+  ],
+  "feature_groups": {
+    "dur": [
+      "dur"
+    ],
+    "spkts": [
+      "spkts"
+    ],
+    "dpkts": [
+      "dpkts"
+    ],
+    "sbytes": [
+      "sbytes"
+    ],
+    "dbytes": [
+      "dbytes"
+    ],
+    "rate": [
+      "rate"
+    ],
+    "sttl": [
+      "sttl"
+    ],
+    "dttl": [
+      "dttl"
+    ],
+    "sload": [
+      "sload"
+    ],
+    "dload": [
+      "dload"
+    ],
+    "sloss": [
+      "sloss"
+    ],
+    "dloss": [
+      "dloss"
+    ],
+    "sinpkt": [
+      "sinpkt"
+    ],
+    "dinpkt": [
+      "dinpkt"
+    ],
+    "sjit": [
+      "sjit"
+    ],
+    "djit": [
+      "djit"
+    ],
+    "synack": [
+      "synack"
+    ],
+    "ackdat": [
+      "ackdat"
+    ],
+    "smean": [
+      "smean"
+    ],
+    "dmean": [
+      "dmean"
+    ],
+    "trans_depth": [
+      "trans_depth"
+    ],
+    "response_body_len": [
+      "response_body_len"
+    ],
+    "ct_srv_src": [
+      "ct_srv_src"
+    ],
+    "ct_state_ttl": [
+      "ct_state_ttl"
+    ],
+    "ct_dst_ltm": [
+      "ct_dst_ltm"
+    ],
+    "ct_src_dport_ltm": [
+      "ct_src_dport_ltm"
+    ],
+    "ct_dst_sport_ltm": [
+      "ct_dst_sport_ltm"
+    ],
+    "ct_dst_src_ltm": [
+      "ct_dst_src_ltm"
+    ],
+    "ct_ftp_cmd": [
+      "ct_ftp_cmd"
+    ],
+    "ct_flw_http_mthd": [
+      "ct_flw_http_mthd"
+    ],
+    "ct_src_ltm": [
+      "ct_src_ltm"
+    ],
+    "ct_srv_dst": [
+      "ct_srv_dst"
+    ],
+    "proto": [
+      "proto_arp",
+      "proto_ospf",
+      "proto_sctp",
+      "proto_tcp",
+      "proto_udp",
+      "proto_unas",
+      "proto_infrequent_sklearn"
+    ],
+    "service": [
+      "service_-",
+      "service_dns",
+      "service_ftp",
+      "service_ftp-data",
+      "service_http",
+      "service_pop3",
+      "service_smtp",
+      "service_ssh",
+      "service_infrequent_sklearn"
+    ],
+    "state": [
+      "state_CON",
+      "state_FIN",
+      "state_INT",
+      "state_REQ",
+      "state_infrequent_sklearn"
+    ]
+  },
+  "threshold": 0.6438459113000569,
+  "threshold_rule": {
+    "target_recall": 0.95,
+    "computed_on": "validation",
+    "validation_flows": 35068,
+    "validation_detection_rate": 0.9500167588402882,
+    "validation_false_alarm_rate": 0.08955357142857143
+  },
+  "can_explain": true,
+  "explanation_method": "linear_logit",
+  "test_metrics": {
+    "test_flows": 82332,
+    "detection": {
+      "detection_rate": 0.9453586870202064,
+      "false_alarm_rate": 0.2464864864864865,
+      "precision": 0.8245310245310246,
+      "f1": 0.8808204959560977,
+      "pr_auc": 0.9724589315023316,
+      "roc_auc": 0.9647608908211133,
+      "accuracy": 0.8591434679104115,
+      "confusion": {
+        "tp": 42855,
+        "fp": 9120,
+        "tn": 27880,
+        "fn": 2477
+      }
+    },
+    "attack_type": {
+      "evaluated_flows": 42855,
+      "macro_f1": 0.3657467886616116,
+      "per_class": [
+        {
+          "attack_cat": "Generic",
+          "precision": 0.9952373131877156,
+          "recall": 0.9643027634859174,
+          "f1": 0.9795258620689655,
+          "support": 18853
+        },
+        {
+          "attack_cat": "Exploits",
+          "precision": 0.564812048048766,
+          "recall": 0.8978719361580847,
+          "f1": 0.6934223559191459,
+          "support": 10526
+        },
+        {
+          "attack_cat": "Fuzzers",
+          "precision": 0.6797118847539015,
+          "recall": 0.6419501133786848,
+          "f1": 0.6602915451895044,
+          "support": 4410
+        },
+        {
+          "attack_cat": "DoS",
+          "precision": 0.46835443037974683,
+          "recall": 0.009261576971214018,
+          "f1": 0.018163966617574866,
+          "support": 3995
+        },
+        {
+          "attack_cat": "Reconnaissance",
+          "precision": 0.750297619047619,
+          "recall": 0.7277713625866051,
+          "f1": 0.738862837045721,
+          "support": 3464
+        },
+        {
+          "attack_cat": "Analysis",
+          "precision": 0.09090909090909091,
+          "recall": 0.0064516129032258064,
+          "f1": 0.012048192771084338,
+          "support": 620
+        },
+        {
+          "attack_cat": "Backdoor",
+          "precision": null,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 575
+        },
+        {
+          "attack_cat": "Shellcode",
+          "precision": 0.20689655172413793,
+          "recall": 0.11382113821138211,
+          "f1": 0.14685314685314685,
+          "support": 369
+        },
+        {
+          "attack_cat": "Worms",
+          "precision": 0.25,
+          "recall": 0.023255813953488372,
+          "f1": 0.0425531914893617,
+          "support": 43
+        }
+      ],
+      "confusion": {
+        "labels": [
+          "Generic",
+          "Exploits",
+          "Fuzzers",
+          "DoS",
+          "Reconnaissance",
+          "Analysis",
+          "Backdoor",
+          "Shellcode",
+          "Worms"
+        ],
+        "matrix": [
+          [
+            18180,
+            461,
+            176,
+            1,
+            29,
+            0,
+            0,
+            4,
+            2
+          ],
+          [
+            45,
+            9451,
+            600,
+            36,
+            266,
+            24,
+            0,
+            103,
+            1
+          ],
+          [
+            4,
+            1356,
+            2831,
+            1,
+            203,
+            8,
+            0,
+            7,
+            0
+          ],
+          [
+            23,
+            3610,
+            202,
+            37,
+            101,
+            4,
+            0,
+            18,
+            0
+          ],
+          [
+            7,
+            684,
+            222,
+            2,
+            2521,
+            0,
+            0,
+            28,
+            0
+          ],
+          [
+            2,
+            607,
+            6,
+            1,
+            0,
+            4,
+            0,
+            0,
+            0
+          ],
+          [
+            2,
+            527,
+            26,
+            1,
+            14,
+            4,
+            0,
+            1,
+            0
+          ],
+          [
+            0,
+            8,
+            95,
+            0,
+            224,
+            0,
+            0,
+            42,
+            0
+          ],
+          [
+            4,
+            29,
+            7,
+            0,
+            2,
+            0,
+            0,
+            0,
+            1
+          ]
+        ]
+      }
+    }
+  },
+  "complexity": {
+    "training_seconds": 38.86958229400625,
+    "training_flows": 140273,
+    "prediction_ms_per_1000_flows": 2.761869030159198,
+    "model_size_mb": 0.027803,
+    "hardware": "11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz, 16 núcleos lógicos"
+  }
+}

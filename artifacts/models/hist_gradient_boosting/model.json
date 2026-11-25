@@ -1,0 +1,415 @@
+{
+  "name": "hist_gradient_boosting",
+  "display_name": "HistGradientBoosting",
+  "is_mock": false,
+  "trained_at": "2026-11-25T00:24:14Z",
+  "sklearn_version": "1.9.1",
+  "detector_type": "binary",
+  "preprocessing_method": "m1",
+  "use_ttl": true,
+  "numeric_cols": [
+    "dur",
+    "spkts",
+    "dpkts",
+    "sbytes",
+    "dbytes",
+    "rate",
+    "sttl",
+    "dttl",
+    "sload",
+    "dload",
+    "sloss",
+    "dloss",
+    "sinpkt",
+    "dinpkt",
+    "sjit",
+    "djit",
+    "synack",
+    "ackdat",
+    "smean",
+    "dmean",
+    "trans_depth",
+    "response_body_len",
+    "ct_srv_src",
+    "ct_state_ttl",
+    "ct_dst_ltm",
+    "ct_src_dport_ltm",
+    "ct_dst_sport_ltm",
+    "ct_dst_src_ltm",
+    "ct_ftp_cmd",
+    "ct_flw_http_mthd",
+    "ct_src_ltm",
+    "ct_srv_dst"
+  ],
+  "categorical_cols": [
+    "proto",
+    "service",
+    "state"
+  ],
+  "log_cols": [
+    "dur",
+    "spkts",
+    "dpkts",
+    "sbytes",
+    "dbytes",
+    "rate",
+    "sload",
+    "dload",
+    "sloss",
+    "dloss",
+    "sinpkt",
+    "dinpkt",
+    "sjit",
+    "djit",
+    "dmean",
+    "response_body_len",
+    "ct_srv_src",
+    "ct_dst_ltm",
+    "ct_dst_src_ltm",
+    "ct_src_ltm",
+    "ct_srv_dst"
+  ],
+  "feature_groups": {
+    "dur": [
+      "dur"
+    ],
+    "spkts": [
+      "spkts"
+    ],
+    "dpkts": [
+      "dpkts"
+    ],
+    "sbytes": [
+      "sbytes"
+    ],
+    "dbytes": [
+      "dbytes"
+    ],
+    "rate": [
+      "rate"
+    ],
+    "sttl": [
+      "sttl"
+    ],
+    "dttl": [
+      "dttl"
+    ],
+    "sload": [
+      "sload"
+    ],
+    "dload": [
+      "dload"
+    ],
+    "sloss": [
+      "sloss"
+    ],
+    "dloss": [
+      "dloss"
+    ],
+    "sinpkt": [
+      "sinpkt"
+    ],
+    "dinpkt": [
+      "dinpkt"
+    ],
+    "sjit": [
+      "sjit"
+    ],
+    "djit": [
+      "djit"
+    ],
+    "synack": [
+      "synack"
+    ],
+    "ackdat": [
+      "ackdat"
+    ],
+    "smean": [
+      "smean"
+    ],
+    "dmean": [
+      "dmean"
+    ],
+    "trans_depth": [
+      "trans_depth"
+    ],
+    "response_body_len": [
+      "response_body_len"
+    ],
+    "ct_srv_src": [
+      "ct_srv_src"
+    ],
+    "ct_state_ttl": [
+      "ct_state_ttl"
+    ],
+    "ct_dst_ltm": [
+      "ct_dst_ltm"
+    ],
+    "ct_src_dport_ltm": [
+      "ct_src_dport_ltm"
+    ],
+    "ct_dst_sport_ltm": [
+      "ct_dst_sport_ltm"
+    ],
+    "ct_dst_src_ltm": [
+      "ct_dst_src_ltm"
+    ],
+    "ct_ftp_cmd": [
+      "ct_ftp_cmd"
+    ],
+    "ct_flw_http_mthd": [
+      "ct_flw_http_mthd"
+    ],
+    "ct_src_ltm": [
+      "ct_src_ltm"
+    ],
+    "ct_srv_dst": [
+      "ct_srv_dst"
+    ],
+    "proto": [
+      "proto_arp",
+      "proto_ospf",
+      "proto_sctp",
+      "proto_tcp",
+      "proto_udp",
+      "proto_unas",
+      "proto_infrequent_sklearn"
+    ],
+    "service": [
+      "service_-",
+      "service_dns",
+      "service_ftp",
+      "service_ftp-data",
+      "service_http",
+      "service_pop3",
+      "service_smtp",
+      "service_ssh",
+      "service_infrequent_sklearn"
+    ],
+    "state": [
+      "state_CON",
+      "state_FIN",
+      "state_INT",
+      "state_REQ",
+      "state_infrequent_sklearn"
+    ]
+  },
+  "threshold": 0.6885623180528533,
+  "threshold_rule": {
+    "target_recall": 0.95,
+    "computed_on": "validation",
+    "validation_flows": 35068,
+    "validation_detection_rate": 0.9500167588402882,
+    "validation_false_alarm_rate": 0.046160714285714284
+  },
+  "can_explain": true,
+  "explanation_method": "shap_tree",
+  "test_metrics": {
+    "test_flows": 82332,
+    "detection": {
+      "detection_rate": 0.9650357363451866,
+      "false_alarm_rate": 0.1652972972972973,
+      "precision": 0.8773439223472315,
+      "f1": 0.9191028940595619,
+      "pr_auc": 0.988279244397149,
+      "roc_auc": 0.9839923796447113,
+      "accuracy": 0.9064640722926687,
+      "confusion": {
+        "tp": 43747,
+        "fp": 6116,
+        "tn": 30884,
+        "fn": 1585
+      }
+    },
+    "attack_type": {
+      "evaluated_flows": 43747,
+      "macro_f1": 0.559601298282228,
+      "per_class": [
+        {
+          "attack_cat": "Generic",
+          "precision": 0.9981489547038328,
+          "recall": 0.9718011237146189,
+          "f1": 0.9847988397701026,
+          "support": 18866
+        },
+        {
+          "attack_cat": "Exploits",
+          "precision": 0.8344425956738769,
+          "recall": 0.6372878279023327,
+          "f1": 0.7226596675415573,
+          "support": 11017
+        },
+        {
+          "attack_cat": "Fuzzers",
+          "precision": 0.9076190476190477,
+          "recall": 0.6093350383631714,
+          "f1": 0.7291507268553941,
+          "support": 4692
+        },
+        {
+          "attack_cat": "DoS",
+          "precision": 0.4184055644729802,
+          "recall": 0.19232661091982292,
+          "f1": 0.2635214827295703,
+          "support": 4066
+        },
+        {
+          "attack_cat": "Reconnaissance",
+          "precision": 0.8915922389898367,
+          "recall": 0.8299885321100917,
+          "f1": 0.8596881959910914,
+          "support": 3488
+        },
+        {
+          "attack_cat": "Analysis",
+          "precision": 0.11018463371054199,
+          "recall": 0.29505582137161085,
+          "f1": 0.16045099739809193,
+          "support": 627
+        },
+        {
+          "attack_cat": "Backdoor",
+          "precision": 0.0492393260265009,
+          "recall": 0.5180722891566265,
+          "f1": 0.08993128174484613,
+          "support": 581
+        },
+        {
+          "attack_cat": "Shellcode",
+          "precision": 0.35953757225433525,
+          "recall": 0.8497267759562842,
+          "f1": 0.5052802599512591,
+          "support": 366
+        },
+        {
+          "attack_cat": "Worms",
+          "precision": 0.7380952380952381,
+          "recall": 0.7045454545454546,
+          "f1": 0.7209302325581395,
+          "support": 44
+        }
+      ],
+      "confusion": {
+        "labels": [
+          "Generic",
+          "Exploits",
+          "Fuzzers",
+          "DoS",
+          "Reconnaissance",
+          "Analysis",
+          "Backdoor",
+          "Shellcode",
+          "Worms"
+        ],
+        "matrix": [
+          [
+            18334,
+            339,
+            28,
+            90,
+            0,
+            14,
+            29,
+            27,
+            5
+          ],
+          [
+            18,
+            7021,
+            147,
+            605,
+            297,
+            541,
+            2257,
+            127,
+            4
+          ],
+          [
+            5,
+            242,
+            2859,
+            177,
+            17,
+            368,
+            717,
+            305,
+            2
+          ],
+          [
+            7,
+            571,
+            69,
+            782,
+            35,
+            364,
+            2192,
+            46,
+            0
+          ],
+          [
+            1,
+            193,
+            20,
+            45,
+            2895,
+            24,
+            269,
+            41,
+            0
+          ],
+          [
+            0,
+            9,
+            0,
+            85,
+            1,
+            185,
+            347,
+            0,
+            0
+          ],
+          [
+            0,
+            10,
+            1,
+            77,
+            1,
+            183,
+            301,
+            8,
+            0
+          ],
+          [
+            2,
+            19,
+            24,
+            8,
+            1,
+            0,
+            1,
+            311,
+            0
+          ],
+          [
+            1,
+            10,
+            2,
+            0,
+            0,
+            0,
+            0,
+            0,
+            31
+          ]
+        ]
+      }
+    }
+  },
+  "complexity": {
+    "training_seconds": 24.732194463009364,
+    "training_flows": 140273,
+    "prediction_ms_per_1000_flows": 16.111700152915574,
+    "model_size_mb": 14.213219,
+    "hardware": "11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz, 16 núcleos lógicos"
+  }
+}

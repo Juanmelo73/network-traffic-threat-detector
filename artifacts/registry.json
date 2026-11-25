@@ -1,8 +1,17 @@
 {
-  "default_model": "mock",
+  "default_model": "hist_gradient_boosting",
   "models": [
     {
-      "name": "mock"
+      "name": "hist_gradient_boosting"
+    },
+    {
+      "name": "random_forest"
+    },
+    {
+      "name": "mlp"
+    },
+    {
+      "name": "logistic_regression"
     }
   ]
 }

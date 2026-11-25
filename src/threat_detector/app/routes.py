@@ -10,7 +10,8 @@ import logging
 import re
 from typing import Annotated
 
-from fastapi import APIRouter, File, Form, Request, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, File, Form, Request, Response, UploadFile, WebSocket, WebSocketDisconnect
+from pydantic_core import to_json
 from starlette.concurrency import run_in_threadpool
 
 from threat_detector.app.analyses import read_flows, run_analysis, validate_upload
@@ -48,6 +49,18 @@ def find_analysis(request, analysis_id):
     return analysis
 
 
+def analysis_response(analysis):
+    """La respuesta JSON de un análisis (sección 4), sin validarla flujo por flujo.
+
+    Si la ruta devolviera el diccionario, FastAPI validaría cada flujo con AnalysisResponse antes
+    de pasarlo a JSON: con un archivo de 25 MB, unos 190 MB temporales. Analysis.response() ya arma
+    la respuesta con el formato del contrato, y to_json es el mismo serializador de Pydantic:
+    tests/test_app.py comprueba que los bytes son los mismos que con la validación y que cumplen el
+    esquema. response_model sigue en la ruta para la documentación (/openapi.json).
+    """
+    return Response(to_json(analysis.response()), media_type="application/json")
+
+
 @router.post("/api/predict", response_model=AnalysisResponse)
 def predict(
     request: Request,
@@ -73,19 +86,21 @@ def predict(
         if predictor is None:
             raise ApiError("unknown_model", {"model": model_name})
         if use_sample:
-            return state.analyses.sample(predictor, use_labels).response()
+            return analysis_response(state.analyses.sample(predictor, use_labels))
         has_labels = validate_upload(flows, predictor.info, use_labels)
         analysis = run_analysis(state.analyses.new_id(), flows, predictor, has_labels)
     except FlowValidationError as error:
         raise ApiError(error.code, error.details, str(error)) from error
+    # El análisis guarda su propia copia compacta: la tabla leída se libera antes de armar la respuesta.
+    del flows
     state.analyses.add(analysis)
-    return analysis.response()
+    return analysis_response(analysis)
 
 
 @router.get("/api/analysis/{analysis_id}", response_model=AnalysisResponse)
 def get_analysis(request: Request, analysis_id: str):
     """Devuelve un análisis ya hecho, sin recalcular nada (sección 4)."""
-    return find_analysis(request, analysis_id).response()
+    return analysis_response(find_analysis(request, analysis_id))
 
 
 @router.get("/api/explain/{id}", response_model=ExplainResponse)

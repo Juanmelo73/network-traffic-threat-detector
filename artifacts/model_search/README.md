@@ -1,6 +1,9 @@
 # Resultados de la búsqueda de modelos
 
-Resultados de `notebooks/05_models.ipynb` y de `src/threat_detector/ml/training.py`, para el artículo y la presentación. Todos los valores salen de la parte de entrenamiento y de la parte de validación del archivo oficial de entrenamiento de UNSW-NB15. La partición de prueba no se usa en ninguno de estos archivos.
+Resultados de `notebooks/05_models.ipynb` (búsqueda de modelos en validación) y de `notebooks/06_final_training.ipynb` (entrenamiento final), para el artículo y la presentación. La lógica está en `src/threat_detector/ml/training.py`.
+
+- Los archivos de la búsqueda salen de la parte de entrenamiento y de la parte de validación del archivo oficial de entrenamiento de UNSW-NB15; no usan la partición de prueba.
+- El entrenamiento final se ejecuta desde `notebooks/06_final_training.ipynb`, que llama a `train_final_models()`. Es el único lugar donde se usa la partición de prueba, una sola vez por modelo.
 
 ## Tablas
 
@@ -10,6 +13,13 @@ Resultados de `notebooks/05_models.ipynb` y de `src/threat_detector/ml/training.
 | `unavoidable_type_errors.csv` | Por tipo de ataque, en la parte de entrenamiento: cuántos ataques están en grupos de flujos idénticos con otros tipos, cuántos se equivocan aunque el modelo memorice (`certain_errors`) y cuántos empatan con otro tipo (`tied_flows`). La fila `Total` trae el mínimo exacto de errores (`min_errors`). |
 | `label_mixed_groups.csv` | Grupos de flujos idénticos que mezclan flujos normales y ataques en la parte de entrenamiento: cuántos son, cuántos flujos tienen y los errores mínimos del detector. |
 | `train_validation_gap.csv` | Brecha entre entrenamiento y validación (PR-AUC y tasa de falsas alarmas del detector, F1 macro del clasificador) de los 4 modelos que se registran en la app y de casos de la búsqueda que sobreentrenan. |
+| `test_results.csv` | Entrenamiento final (notebook 06): una fila por cada uno de los 11 modelos entrenados — los 4 registrados en la app (`kind` = `elegido` o `modelo base`), las otras 4 familias (`referencia`) y las versiones sin TTL de los 3 elegidos (`m3`). Trae el método, los parámetros y las iteraciones del detector y del clasificador, el umbral, las métricas en validación y en prueba lado a lado (recall, falsas alarmas, precisión, F1, exactitud, PR-AUC, ROC-AUC, `tp`/`fp`/`tn`/`fn`, F1 macro de tipos y su matriz 9×9), `training_seconds`, `training_flows`, `prediction_ms_per_1000_flows`, el tamaño, el equipo, la fecha de entrenamiento y las métricas de prueba completas (`test_metrics_json`). Cada modelo se evaluó en prueba una sola vez. |
+| `test_per_type.csv` | Precisión, recall, F1 y soporte de cada tipo de ataque, en validación y en prueba, para los 11 modelos. Se miden sobre los ataques reales que dieron alerta, como en la app. |
+| `false_alarms_by_category.csv` | Falsas alarmas de los 4 modelos registrados, desglosadas por `proto`, `service` y `state`: por categoría, los flujos normales, su parte del total de normales, las falsas alarmas y su tasa en entrenamiento, validación y prueba; la parte de las falsas alarmas de prueba que sale de cada categoría; y cómo ve la categoría el preprocesador del modelo (`in_training`: `propia`, `agrupada` en la columna infrecuente o `nueva`). Usa los modelos exportados con su umbral, como la app; no vuelve a evaluar ningún modelo, y sus falsas alarmas suman el `fp` de `test_results.csv`. Alcance: solo desglosa por esas tres variables; no explica qué otras características de los flujos normales producen las falsas alarmas. |
+| `numeric_differences_normals.csv` | HistGradientBoosting: para los normales de los grupos `tcp` + `FIN` y `udp` + `INT` (los que concentran sus falsas alarmas de prueba), y para cada una de las 32 variables numéricas del modelo, la distancia de Kolmogorov–Smirnov (`ks_d`) y los cuartiles de cada lado en tres comparaciones: R, entrenamiento contra validación (referencia); A, entrenamiento contra prueba; B, en prueba, los que dieron falsa alarma (`first`) contra los que no (`second`). `few_flows` marca las comparaciones con menos de 100 flujos en algún lado. Es descriptivo: no explica por qué el modelo da alerta. |
+| `ttl_254_check.csv` | Comprobación descriptiva en el grupo `tcp` + `FIN`, por parte (entrenamiento, validación y prueba): cuántos flujos tienen `sttl` = 254 y qué proporción son ataques, lo mismo con `dttl` = 252, qué proporción de los normales tiene `sttl` = 254 y, en prueba, qué parte de las falsas alarmas de HistGradientBoosting en el grupo tiene `sttl` = 254. |
+| `oob_vs_validation.csv` | PR-AUC del detector y F1 macro del clasificador del Random Forest elegido, fuera de la bolsa y en la validación agrupada, con los flujos sin medición (`flows_without_oob`). Lo fuera de la bolsa no respeta los grupos de flujos idénticos; es un dato complementario. Lo recalcula la sección de resultados del notebook 06 con la corrección descrita abajo. |
+| `oob_per_type.csv` | Del mismo clasificador: precisión, recall y F1 de cada tipo de ataque fuera de la bolsa (solo flujos medidos) y en la validación agrupada (todos los ataques de validación), con los flujos de entrenamiento de cada tipo, los que quedaron sin medición y en cuántos árboles quedó fuera de la bolsa cada flujo en promedio (`oob_trees_mean`). |
 
 ## Figuras
 
@@ -19,3 +29,34 @@ Resultados de `notebooks/05_models.ipynb` y de `src/threat_detector/ml/training.
 | `ttl_m2_vs_m3.png` | Tasa de falsas alarmas de cada familia con M2 (con las variables de TTL) y con M3 (sin ellas). |
 | `curves_random_forest.png`, `curves_extra_trees.png`, `curves_hist_gradient_boosting.png` | Curvas de validación: la métrica de entrenamiento y la de validación al variar un hiperparámetro desde la combinación elegida. |
 | `train_validation_gap.png` | La brecha de `train_validation_gap.csv`, en PR-AUC y en F1 macro. |
+| `validation_vs_test.png` | Recall y tasa de falsas alarmas del detector, y F1 macro del clasificador, en validación y en prueba, para las 8 familias. |
+| `ttl_test.png` | El experimento de TTL en prueba: los 3 modelos elegidos con las variables de TTL (versión de la app) y sin ellas (M3, mismos hiperparámetros). |
+| `test_f1_per_type.png` | F1 de cada tipo de ataque en prueba, para las 8 familias. |
+| `false_alarms_by_category.png` | HistGradientBoosting: tasa de falsas alarmas en entrenamiento, validación y prueba de las categorías de `proto`, `service` y `state` con más falsas alarmas en prueba, con sus normales en cada parte. Las categorías con menos de 100 normales en prueba van sin relleno: con 100, el intervalo de confianza del 95 % de una tasa llega a ±9,8 puntos en el peor caso. |
+| `normal_mix_by_category.png` | HistGradientBoosting: la parte de los normales de entrenamiento, validación y prueba que tiene cada una de esas categorías. |
+| `numeric_differences_normals.png` | La distancia de Kolmogorov–Smirnov de las 10 variables con mayor diferencia en A y en B, por grupo, con la referencia R de la misma variable. |
+| `numeric_ecdf_top.png` | Distribución acumulada de las 3 variables con mayor diferencia en B, por grupo: normales de prueba con y sin falsa alarma, y normales de entrenamiento. |
+
+## De dónde sale cada archivo y cómo se regenera
+
+| Archivos | Sale de | Cómo se regenera |
+|---|---|---|
+| `search_results.csv` | Notebook 05, secciones 6, 7, 10 y 12: `run_search` con `phase1_candidates`, `phase2_candidates` y `curve_candidates`. | Ejecutando el notebook 05. `run_search` salta las filas que ya están: con el archivo completo no entrena nada. Para recalcular desde cero hay que mover el archivo a otro lado; en el equipo de `hardware` tomó unos 6 minutos el barrido, 75 la búsqueda y 17 las curvas. Si cambia el código que afecta los resultados, se sube `SEARCH_VERSION` y `run_search` no mezcla filas de versiones distintas. |
+| `unavoidable_type_errors.csv`, `label_mixed_groups.csv` | Notebook 05, sección 4: `unavoidable_type_errors` y `label_mixed_groups` sobre la parte de entrenamiento. | Se reescriben cada vez que se ejecuta el notebook 05. |
+| `defaults_scores.png`, `ttl_m2_vs_m3.png`, `curves_*.png`, `train_validation_gap.csv`, `train_validation_gap.png` | Notebook 05, secciones 7, 9, 12 y 13, a partir de `search_results.csv`. | Se reescriben cada vez que se ejecuta el notebook 05, sin entrenar. |
+| `test_results.csv`, `test_per_type.csv` | Notebook 06, celda de entrenamiento: `train_final_models()`. | **No se regeneran.** La partición de prueba se usa una sola vez: si `test_results.csv` existe, `train_final_models` no vuelve a evaluar ningún modelo (si falta un modelo exportado, lo vuelve a entrenar y exportar con lo guardado, sin la prueba). |
+| `validation_vs_test.png`, `ttl_test.png`, `test_f1_per_type.png` | Notebook 06, sección 4, a partir de `test_results.csv` y `test_per_type.csv`. | Ejecutando la sección 4 del notebook 06. |
+| `oob_vs_validation.csv`, `oob_per_type.csv` | Notebook 06, sección 4: `oob_comparison` y `oob_per_type`, que vuelven a entrenar el Random Forest elegido con la parte de entrenamiento y `oob_score=True`; no usan la prueba. | Ejecutando la sección 4 del notebook 06. |
+| `false_alarms_by_category.csv`, `false_alarms_by_category.png`, `normal_mix_by_category.png` | Notebook 06, sección 5: `false_alarms_by_category` con los 4 modelos exportados y su umbral. | Ejecutando la sección 5 del notebook 06. Repite las predicciones de la evaluación sin cambiar `test_results.csv`, y comprueba que sus falsas alarmas sumen el `fp` guardado. |
+| `numeric_differences_normals.csv`, `numeric_differences_normals.png`, `numeric_ecdf_top.png`, `ttl_254_check.csv` | Notebook 06, sección 6: `numeric_differences` y la comprobación de `sttl` = 254, con HistGradientBoosting exportado. | Ejecutando la sección 6 del notebook 06. |
+
+Para volver a ejecutar el notebook 06 en el editor, se ejecutan las secciones 1 y 2 (entorno e importaciones) y después de la sección 4 en adelante, sin volver a ejecutar la celda de entrenamiento de la sección 3: así se conserva su salida, que es el registro de cómo se entrenó cada modelo. Si se ejecutara, solo diría que cada modelo ya estaba evaluado.
+
+## Límites de la medición fuera de la bolsa
+
+**En este modelo, con `class_weight="balanced"`, la medición fuera de la bolsa no mide los tipos de ataque poco frecuentes, y por eso no reemplaza la validación agrupada.** Para el artículo vale solo el valor corregido de `oob_vs_validation.csv` y `oob_per_type.csv`.
+
+- **Pocos árboles por flujo.** El clasificador de tipos del Random Forest tiene 25 árboles. Si la bolsa se sorteara igual para todos los flujos, cada uno quedaría fuera de unos 9 (25 × e⁻¹ ≈ 9,2), y su predicción fuera de la bolsa promediaría solo esos árboles, no los 25 del modelo.
+- **La bolsa se sortea según el peso de clase.** En scikit-learn 1.9.1, con `class_weight="balanced"`, cada árbol sortea su bolsa con una probabilidad proporcional al peso de clase de cada flujo (comprobado en su código). Los tipos menos frecuentes, con más peso, entran en la bolsa de casi todos los árboles: en este modelo, Shellcode y Worms no tienen ningún flujo medido, y Analysis y Backdoor casi ninguno (ver `oob_per_type.csv`).
+- **Flujos sin medición.** scikit-learn deja en ceros (no vacía) la predicción fuera de la bolsa de un flujo que no quedó fuera de ningún árbol. La medición cuenta los árboles de cada flujo y deja fuera a esos flujos. La primera versión de `oob_vs_validation.csv`, escrita por la celda de entrenamiento, no hacía esta corrección; la sección de resultados del notebook 06 la recalcula y la reemplaza.
+

@@ -30,6 +30,7 @@ from threat_detector.dataset import (
     TARGET,
     TARGET_COLS,
     FlowValidationError,
+    check_values,
     load_flows,
     make_demo_sample,
     validate_flows,
@@ -114,6 +115,39 @@ def test_empty_values_are_reported_before_negative_ones(sample_flows):
     sample_flows.loc[5, "dur"] = np.nan
     with pytest.raises(ValueError, match="vacíos o no numéricos en las columnas dur"):
         validate(sample_flows)
+
+
+def previous_check_values(flows, numeric_cols):
+    """La revisión anterior, con todas las numéricas a la vez: la referencia de la prueba de abajo."""
+    numbers = flows[numeric_cols].apply(lambda values: pd.to_numeric(values, errors="coerce"))
+    for reason, mask in (("empty_or_not_numeric", ~np.isfinite(numbers)), ("negative", numbers < 0)):
+        bad = np.asarray(mask.any(axis=1), dtype=bool)
+        if bad.any():
+            return {"reason": reason, "columns": mask.columns[mask.any()].tolist(),
+                    "rows": (np.flatnonzero(bad)[:MAX_ERROR_ROWS] + 2).tolist(), "total_rows": int(bad.sum())}
+    return None
+
+
+PROBLEM_VALUES = {"mixed": [np.nan, "abc", "", np.inf, -np.inf, -1, -0.5], "negative": [-1, -0.5, -3]}
+
+
+@pytest.mark.parametrize("kind", PROBLEM_VALUES)
+@pytest.mark.parametrize("seed", range(10))
+def test_column_by_column_check_gives_the_same_errors(sample_flows, seed, kind):
+    # Problemas al azar en varias columnas: vacíos, texto e infinitos mezclados con negativos, o solo negativos.
+    rng = np.random.default_rng(seed)
+    numeric_cols = numeric_input_cols()
+    flows = sample_flows.astype({column: object for column in numeric_cols})
+    for _ in range(rng.integers(0, 12)):
+        row, column = rng.integers(len(flows)), numeric_cols[rng.integers(len(numeric_cols))]
+        flows.loc[row, column] = rng.choice(PROBLEM_VALUES[kind])
+    expected = previous_check_values(flows, numeric_cols)
+    if expected is None:
+        check_values(flows, numeric_cols)
+        return
+    with pytest.raises(FlowValidationError) as error:
+        check_values(flows, numeric_cols)
+    assert error.value.details == expected
 
 
 def test_rows_are_counted_by_position_not_by_index(sample_flows):

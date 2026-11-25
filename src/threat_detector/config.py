@@ -79,6 +79,11 @@ MAX_UPLOAD_MB = 25
 # Análisis de archivos subidos que se guardan en memoria; los de la muestra de demostración no
 # cuentan, porque se regeneran solos.
 MAX_STORED_ANALYSES = 15
+# Los modelos entrenados predicen los archivos subidos por bloques de este número de flujos: así la
+# memoria temporal de la predicción no crece con el archivo. HistGradientBoosting da exactamente lo
+# mismo que con todo el archivo de una vez; la MLP y la regresión logística, probabilidades que difieren
+# en menos de 1e-15 (alertas, severidad y tipo iguales), como el ruido que Random Forest ya tiene.
+PREDICTION_BATCH_ROWS = 10_000
 # Pausa entre flujos de la simulación con velocidad 1, en segundos; con velocidad s es este valor / s.
 SIMULATION_INTERVAL_SECONDS = 1.0
 SIMULATION_SPEEDS = (1, 2, 4)

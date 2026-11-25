@@ -6,9 +6,9 @@ import numpy as np
 import pandas as pd
 from sklearn.metrics import average_precision_score, confusion_matrix, roc_auc_score
 
-from threat_detector.artifacts import detection_rate, false_alarm_rate, is_alert
+from threat_detector.artifacts import detection_rate, false_alarm_rate, is_alert, predict_flows
 from threat_detector.config import TARGET_RECALL
-from threat_detector.dataset import ATTACK_CAT, ATTACK_TYPES, NORMAL_CAT, TARGET
+from threat_detector.dataset import ATTACK_CAT, ATTACK_TYPES, CATEGORICAL_COLS, NORMAL_CAT, TARGET
 from threat_detector.ml.preprocessing import flow_pattern_ids
 
 
@@ -215,3 +215,107 @@ def label_mixed_groups(flows):
         "min_errors": _min_errors(mixed),
         "share_of_flows": mixed_flows / len(flows),
     }])
+
+
+# Falsas alarmas por categoría: qué flujos normales dan alerta, desglosados por proto, service y
+# state. Solo desglosa las falsas alarmas de un modelo ya evaluado; no es una métrica nueva.
+
+# Cómo ve el preprocesador de un modelo una categoría (in_training).
+OWN_CATEGORY, GROUPED_CATEGORY, NEW_CATEGORY = "propia", "agrupada", "nueva"
+# Texto de una celda categórica vacía en la tabla.
+EMPTY_CATEGORY = "(vacía)"
+
+
+def _category_status(encoder, position, value):
+    """propia, agrupada o nueva, según las categorías que aprendió el OneHotEncoder del modelo."""
+    known = list(encoder.categories_[position])
+    if value not in known:
+        return NEW_CATEGORY
+    infrequent = encoder.infrequent_categories_[position]
+    if infrequent is not None and value in list(infrequent):
+        return GROUPED_CATEGORY
+    return OWN_CATEGORY
+
+
+def false_alarms_by_category(model, info, parts, columns=CATEGORICAL_COLS):
+    """Falsas alarmas de un modelo por categoría de columns, en cada parte de parts.
+
+    model es el diccionario de model.joblib e info su model.json; parts es {nombre: flujos con
+    etiquetas}, por ejemplo {"train": ..., "validation": ..., "test": ...}. Predice como la app
+    (predict_flows con el umbral de info). Devuelve una fila por variable y categoría con, para cada
+    parte, los normales (<parte>_normals), su proporción entre los normales (<parte>_share), los que
+    dieron alerta (<parte>_false_alarms) y su tasa (<parte>_false_alarm_rate, vacía sin normales); la
+    proporción de las falsas alarmas de la última parte que sale de esa categoría
+    (share_of_<parte>_false_alarms) y cómo ve la categoría el preprocesador del detector
+    (in_training: propia, agrupada en la columna infrecuente o nueva).
+    """
+    encoder = model["detector"]["preprocessor"].named_transformers_["categorical"]
+    encoded_columns = list(encoder.feature_names_in_)
+    normal_alerts = {}
+    for name, flows in parts.items():
+        _, alerts, _ = predict_flows(model, info, flows)
+        normals = flows[TARGET].to_numpy() == 0
+        normal_alerts[name] = (flows[normals], alerts[normals])
+
+    last = list(parts)[-1]
+    rows = []
+    for column in columns:
+        values = {}
+        for name, (normals, alerts) in normal_alerts.items():
+            category = normals[column].astype(object).where(normals[column].notna(), EMPTY_CATEGORY)
+            values[name] = pd.DataFrame({"category": category.to_numpy(), "alert": alerts})
+        categories = sorted(set().union(*(set(v["category"]) for v in values.values())), key=str)
+        for category in categories:
+            row = {"column": column, "category": category}
+            for name, frame in values.items():
+                selected = frame[frame["category"] == category]
+                count = len(selected)
+                alerts = int(selected["alert"].sum())
+                row[f"{name}_normals"] = count
+                row[f"{name}_share"] = count / len(frame) if len(frame) else None
+                row[f"{name}_false_alarms"] = alerts
+                row[f"{name}_false_alarm_rate"] = alerts / count if count else None
+            total_alerts = int(values[last]["alert"].sum())
+            row[f"share_of_{last}_false_alarms"] = row[f"{last}_false_alarms"] / total_alerts if total_alerts else None
+            raw = None if category == EMPTY_CATEGORY else category
+            row["in_training"] = _category_status(encoder, encoded_columns.index(column), raw)
+            rows.append(row)
+    table = pd.DataFrame(rows)
+    return table.sort_values(["column", f"{last}_false_alarms"], ascending=[True, False], kind="stable").reset_index(drop=True)
+
+
+# Diferencias en las variables numéricas entre dos grupos de flujos (análisis descriptivo).
+
+# Cuartiles que se informan junto a la distancia.
+QUANTILES = {"q25": 0.25, "median": 0.5, "q75": 0.75}
+
+
+def ks_distance(first, second):
+    """Distancia de Kolmogorov–Smirnov entre dos muestras: la diferencia máxima entre sus distribuciones acumuladas.
+
+    Va de 0 (iguales) a 1 (sin solapamiento). No depende de la escala (da lo mismo con log1p) ni la
+    desvían los valores extremos. Lanza ValueError si alguna muestra está vacía.
+    """
+    first = np.sort(np.asarray(first, dtype=float))
+    second = np.sort(np.asarray(second, dtype=float))
+    if not len(first) or not len(second):
+        raise ValueError("Las dos muestras deben tener al menos un valor.")
+    # Las distribuciones acumuladas solo cambian en los valores observados: basta con mirarlas ahí.
+    values = np.concatenate([first, second])
+    first_cdf = np.searchsorted(first, values, side="right") / len(first)
+    second_cdf = np.searchsorted(second, values, side="right") / len(second)
+    return float(np.max(np.abs(first_cdf - second_cdf)))
+
+
+def numeric_differences(first, second, columns):
+    """Por variable: flujos, cuartiles de cada grupo (first_*, second_*) y la distancia de Kolmogorov–Smirnov (ks_d)."""
+    rows = []
+    for column in columns:
+        row = {"variable": column, "first_flows": len(first), "second_flows": len(second)}
+        for side, flows in (("first", first), ("second", second)):
+            for name, q in QUANTILES.items():
+                row[f"{side}_{name}"] = float(flows[column].quantile(q))
+        row["ks_d"] = ks_distance(first[column], second[column])
+        rows.append(row)
+    return pd.DataFrame(rows)
+

@@ -57,6 +57,7 @@ from threat_detector.config import (
     MODELS_DIR,
     RANDOM_STATE,
     REGISTRY_PATH,
+    ROOT,
     SCORE_TIE_TOLERANCE,
     TEST_PER_TYPE_CSV,
     TEST_RESULTS_CSV,
@@ -1367,8 +1368,10 @@ def _fit_final_model(spec, results, train_flows):
 def _check_reproduction(spec, results, model, validation_flows):
     """Lanza ValueError si el modelo final no da en validación lo mismo que su fila de la búsqueda.
 
-    Se comprueba antes de tocar la prueba: así el modelo evaluado es exactamente el elegido.
+    Se comprueba antes de tocar la prueba: así el modelo evaluado es exactamente el elegido. Devuelve
+    las comparaciones: (tarea, métrica, valor del modelo final, valor de la búsqueda).
     """
+    comparisons = []
     for task, key, row in (
         ("detector", "detector", spec["detector_row"]),
         ("attack_type", "attack_type_classifier", spec["classifier_row"]),
@@ -1384,6 +1387,8 @@ def _check_reproduction(spec, results, model, validation_flows):
                     f"El modelo final {spec['name']} ({task}) no reproduce su fila de la búsqueda: "
                     f"{name} = {metrics[name]} y en la búsqueda {expected[name]}. No se evalúa en prueba."
                 )
+            comparisons.append((task, name, metrics[name], float(expected[name])))
+    return comparisons
 
 
 def _evaluate(model, threshold, flows):
@@ -1437,6 +1442,54 @@ def _iterations_value(value):
     return None if pd.isna(value) else int(value)
 
 
+def _shown_path(path):
+    """La ruta desde la raíz del proyecto, si está dentro de ella."""
+    try:
+        return path.relative_to(ROOT)
+    except ValueError:
+        return path
+
+
+def _report(spec, row, comparisons, artifacts_dir, already_done=False):
+    """Imprime lo que pasó con un modelo del entrenamiento final, con los valores guardados en test_results.csv."""
+    def number(key, digits=4):
+        return "—" if row[key] in ("", "None", "nan") else f"{float(row[key]):.{digits}f}"
+
+    def iterations(key):
+        return "" if row[key] in ("", "None", "nan") else f" · {int(float(row[key]))} iteraciones o árboles"
+
+    print(f"== {spec['name']} ({spec['kind']}) · familia {spec['family']} · método {spec['method']}", flush=True)
+    print(f"   detector: {row['detector_params']}{iterations('detector_iterations')}")
+    print(f"   tipos:    {row['classifier_params']}{iterations('classifier_iterations')}")
+    if already_done:
+        print("   ya estaba evaluado en prueba (test_results.csv): no se vuelve a entrenar ni a evaluar")
+    elif comparisons is None:
+        print("   comprobación contra la búsqueda: no aplica (versión M3, sin fila propia en la búsqueda)")
+    else:
+        largest = max(abs(value - expected) for _, _, value, expected in comparisons)
+        # Como en la búsqueda, el F1 macro del clasificador se mide aquí sobre todos los ataques de
+        # validación; en las líneas de validación y prueba, como en la app, solo sobre los que dieron alerta.
+        labels = {
+            ("detector", "pr_auc"): "PR-AUC", ("detector", "threshold"): "umbral",
+            ("detector", "false_alarm_rate"): "falsas alarmas",
+            ("attack_type", "macro_f1"): "F1 macro de tipos sobre todos los ataques",
+        }
+        detail = ", ".join(f"{labels[(task, name)]} {value:.6f} (búsqueda {expected:.6f})" for task, name, value, expected in comparisons)
+        print(f"   comprobación contra la búsqueda: coincide (diferencia máxima {largest:.1e}): {detail}")
+    print(f"   umbral {number('threshold')} · entrenamiento {number('training_seconds', 1)} s · "
+          f"predicción {number('prediction_ms_per_1000_flows', 2)} ms por 1.000 flujos · {row['hardware']} · {row['trained_at']}")
+    # F1 macro de tipos: sobre los ataques reales que dieron alerta, como lo mide la app.
+    for split, label in (("validation", "validación"), ("test", "prueba")):
+        print(f"   {label}: recall {number(f'{split}_recall')} · falsas alarmas {number(f'{split}_false_alarm_rate')} · "
+              f"precisión {number(f'{split}_precision')} · F1 {number(f'{split}_f1')} · PR-AUC {number(f'{split}_pr_auc')} · "
+              f"F1 macro {number(f'{split}_macro_f1')}")
+    if spec["register"]:
+        folder = artifacts_dir / MODELS_DIR.name / spec["name"]
+        print(f"   exportado: {_shown_path(folder / MODEL_JOBLIB)} y {_shown_path(folder / MODEL_JSON)}", flush=True)
+    else:
+        print("   no se exporta ni se registra (solo para el artículo)", flush=True)
+
+
 def _is_exported(name, artifacts_dir):
     """Si el modelo ya está exportado con su evaluación final (test_metrics)."""
     folder = artifacts_dir / MODELS_DIR.name / name
@@ -1473,6 +1526,36 @@ def _export_final(spec, model, saved, validation_flows, artifacts_dir):
     return export_model(model, info, artifacts_dir)
 
 
+def _fit_oob(results, choice, family, task, train_flows):
+    """Vuelve a entrenar una tarea del modelo elegido con oob_score=True, que no cambia los árboles.
+
+    Devuelve (fila de la búsqueda, estimador, objetivo, oob_decision_function_, flujos con medición,
+    árboles fuera de la bolsa de cada flujo). Un flujo tiene medición si quedó fuera de la bolsa en
+    al menos un árbol. Los árboles se cuentan con estimators_samples_, que repite el sorteo de
+    scikit-learn: en scikit-learn 1.9, con class_weight, la bolsa de cada árbol se sortea con
+    probabilidad proporcional al peso de clase de cada flujo, así que los tipos con más peso quedan
+    fuera de la bolsa en muy pocos árboles o en ninguno. Para un flujo sin ningún árbol,
+    oob_decision_function_ queda en ceros (no en NaN): por eso no se usa esa función para saberlo.
+    """
+    row = results.loc[int(choice["detector_row" if task == "detector" else "classifier_row"])]
+    params = json.loads(row["params"])
+    train_inputs, target = _task_data(task, train_flows)
+    preprocessor = build_preprocessor(choice["method"]).fit(train_flows[INPUT_COLS])
+    estimator = _candidate_estimator(family).set_params(**_model_params(params))
+    estimator.set_params(n_estimators=int(row["best_iteration"]), warm_start=False, oob_score=True)
+    with warnings.catch_warnings():
+        # scikit-learn avisa si algún flujo quedó en bolsa en todos los árboles; se cuenta aparte.
+        warnings.filterwarnings("ignore", message="Some inputs do not have OOB scores")
+        estimator.fit(preprocessor.transform(train_inputs), target)
+    oob = estimator.oob_decision_function_
+    out_of_bag = np.zeros(len(target), dtype=int)
+    for samples in estimator.estimators_samples_:
+        in_bag = np.zeros(len(target), dtype=bool)
+        in_bag[samples] = True
+        out_of_bag += ~in_bag
+    return row, estimator, target, oob, out_of_bag > 0, out_of_bag
+
+
 def oob_comparison(results, final, train_flows, family="random_forest"):
     """PR-AUC y F1 macro fuera de la bolsa del Random Forest elegido, junto a los de validación agrupada.
 
@@ -1483,19 +1566,8 @@ def oob_comparison(results, final, train_flows, family="random_forest"):
     """
     choice = final.set_index("family").loc[family]
     rows = []
-    for task, row_index in (("detector", choice["detector_row"]), ("attack_type", choice["classifier_row"])):
-        row = results.loc[int(row_index)]
-        params = json.loads(row["params"])
-        train_inputs, target = _task_data(task, train_flows)
-        preprocessor = build_preprocessor(choice["method"]).fit(train_flows[INPUT_COLS])
-        estimator = _candidate_estimator(family).set_params(**_model_params(params))
-        estimator.set_params(n_estimators=int(row["best_iteration"]), warm_start=False, oob_score=True)
-        with warnings.catch_warnings():
-            # scikit-learn avisa si algún flujo quedó en bolsa en todos los árboles; se cuenta abajo.
-            warnings.filterwarnings("ignore", message="Some inputs do not have OOB scores")
-            estimator.fit(preprocessor.transform(train_inputs), target)
-        oob = estimator.oob_decision_function_
-        covered = ~np.isnan(oob).any(axis=1)
+    for task in ("detector", "attack_type"):
+        row, estimator, target, oob, covered, _ = _fit_oob(results, choice, family, task, train_flows)
         if task == "detector":
             probability = attack_probability_from_proba(oob[covered], estimator.classes_, "binary")
             oob_value = detection_metrics(target[covered], probability, compute_threshold(target[covered], probability))["pr_auc"]
@@ -1512,6 +1584,39 @@ def oob_comparison(results, final, train_flows, family="random_forest"):
     return pd.DataFrame(rows)
 
 
+def oob_per_type(results, final, train_flows, family="random_forest"):
+    """Precisión, recall y F1 de cada tipo fuera de la bolsa, junto a los de la validación agrupada.
+
+    Es el clasificador de tipos del Random Forest elegido, entrenado de nuevo con oob_score=True.
+    Los de validación son los de su fila de la búsqueda (todos los ataques de validación). Las
+    métricas fuera de la bolsa usan solo los flujos con medición (ver _fit_oob). Por tipo:
+    train_flows, flows_without_oob (sin ningún árbol fuera de la bolsa) y oob_trees_mean (en
+    cuántos árboles quedó fuera de la bolsa, en promedio: la predicción fuera de la bolsa promedia
+    solo esos árboles, no todos los del modelo).
+    """
+    choice = final.set_index("family").loc[family]
+    row, estimator, target, oob, covered, out_of_bag = _fit_oob(results, choice, family, "attack_type", train_flows)
+    predicted = attack_cat_from_proba(oob[covered], estimator.classes_)
+    per_class = attack_type_metrics(target[covered], predicted, np.ones(covered.sum(), dtype=bool))["per_class"]
+
+    rows = []
+    for c in per_class:
+        prefix = c["attack_cat"].lower()
+        of_type = target == c["attack_cat"]
+        rows.append({
+            "attack_cat": c["attack_cat"],
+            **{f"oob_{metric}": c[metric] for metric in TYPE_METRICS},
+            **{f"validation_{metric}": row[f"{prefix}_{metric}"] for metric in TYPE_METRICS},
+            "train_flows": int(of_type.sum()),
+            "flows_without_oob": int((of_type & ~covered).sum()),
+            "oob_trees_mean": float(out_of_bag[of_type].mean()),
+        })
+    table = pd.DataFrame(rows)
+    table["f1_difference"] = table["oob_f1"] - table["validation_f1"]
+    table["trees"] = len(estimator.estimators_)
+    return table
+
+
 def train_final_models(
     results_path=MODEL_SEARCH_CSV,
     artifacts_dir=ARTIFACTS_DIR,
@@ -1522,6 +1627,9 @@ def train_final_models(
     verbose=True,
 ):
     """Entrenamiento final: entrena, evalúa en prueba una sola vez, exporta y registra.
+
+    Se ejecuta desde notebooks/06_final_training.ipynb, que deja en su salida el registro de cómo se
+    entrenó cada modelo.
 
     1. Elige con select_candidates (fases 1 y 2, dentro de MAX_MODEL_SIZE_MB) y
        apply_simplicity_rule, y arma la lista con final_model_specs.
@@ -1556,11 +1664,12 @@ def train_final_models(
         name = spec["name"]
         if name in saved and (not spec["register"] or _is_exported(name, artifacts_dir)):
             if verbose:
-                print(f"{name}: ya evaluado en prueba; no se repite.", flush=True)
+                _report(spec, saved[name], None, artifacts_dir, already_done=True)
             continue
         model, training_seconds, trained_at = _fit_final_model(spec, results, train_flows)
+        comparisons = None
         if spec["kind"] != TTL_METHOD:
-            _check_reproduction(spec, results, model, validation_flows)
+            comparisons = _check_reproduction(spec, results, model, validation_flows)
 
         if name not in saved:
             if test_flows is None:
@@ -1606,20 +1715,24 @@ def train_final_models(
             _append_csv(test_results_path, FINAL_COLUMNS, [row])
             _append_csv(per_type_path, PER_TYPE_COLUMNS, per_type)
             saved[name] = {k: ("" if v is None else str(v)) for k, v in row.items()}
-            if verbose:
-                print(
-                    f"{name}: prueba PR-AUC {test_detection['pr_auc']:.4f}, recall {test_detection['detection_rate']:.4f}, "
-                    f"falsas alarmas {test_detection['false_alarm_rate']:.4f}, F1 macro {test_types['macro_f1']:.4f}",
-                    flush=True,
-                )
         if spec["register"]:
             _export_final(spec, model, saved[name], validation_flows, artifacts_dir)
+        if verbose:
+            _report(spec, saved[name], comparisons, artifacts_dir)
 
     registered = [s["name"] for s in specs if s["register"]]
     for name in registered:
         register_model(name, artifacts_dir)
     set_default_model(registered[0], artifacts_dir)
     unregister_model(MOCK_MODEL_NAME, artifacts_dir)
+
+    if verbose:
+        registry = read_registry(artifacts_dir)
+        names = [m["name"] for m in registry["models"]]
+        print("Registro (registry.json):", flush=True)
+        print(f"  modelos: {', '.join(names)}", flush=True)
+        print(f"  modelo por defecto: {registry['default_model']}", flush=True)
+        print(f"  simulado registrado: {'sí' if MOCK_MODEL_NAME in names else 'no'}", flush=True)
 
     if "random_forest" in set(final.dropna(subset=["method"])["family"]):
         oob_comparison(results, final, train_flows).to_csv(output_dir / OOB_CSV.name, index=False)

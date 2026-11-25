@@ -1087,6 +1087,8 @@ Con modelos reales (nombres de ejemplo):
 
 Permite programar y probar la app completa antes de tener modelos reales. Responde con valores **inventados**, pero en el formato definitivo de este contrato, así que al llegar los modelos reales no hay que cambiar el frontend ni las rutas.
 
+Hoy no está registrado en la app: la app usa los modelos entrenados, y el simulado se conserva para las pruebas de la app. Los ejemplos de este documento que lo usan (como `sample-mock`) muestran el formato, no los modelos actuales.
+
 ### Cómo existe
 
 - **Carpeta:** `artifacts/models/mock/`, con solo `model.json` y **sin** `model.joblib` (sección 10).
