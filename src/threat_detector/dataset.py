@@ -125,16 +125,28 @@ def check_values(flows, numeric_cols):
 
     Primero revisa los vacíos y los que no son números; solo si no hay, los negativos. Los
     infinitos también cuentan como "no numéricos", porque no son una medida posible.
+
+    Revisa una columna a la vez, para no tener en memoria una copia decimal de todas las numéricas
+    (con un archivo de 25 MB, unos 120 MB). Las columnas del error van en el orden de numeric_cols.
     """
-    numbers = flows[numeric_cols].apply(_numbers)
-    problems = (
-        ("empty_or_not_numeric", "vacíos o no numéricos", ~np.isfinite(numbers)),
-        ("negative", "negativos", numbers < 0),
-    )
-    for reason, text, mask in problems:
-        lines, total = _bad_rows(mask.any(axis=1))
+    rows = len(flows)
+    # Por cada tipo de problema: qué filas lo tienen y en qué columnas.
+    problems = {
+        "empty_or_not_numeric": ("vacíos o no numéricos", np.zeros(rows, dtype=bool), []),
+        "negative": ("negativos", np.zeros(rows, dtype=bool), []),
+    }
+    for column in numeric_cols:
+        # Como decimales, con NaN en lo vacío (también si pandas usa un tipo con valores faltantes).
+        numbers = _numbers(flows[column]).to_numpy(dtype=float, na_value=np.nan)
+        masks = {"empty_or_not_numeric": ~np.isfinite(numbers), "negative": numbers < 0}
+        for reason, mask in masks.items():
+            if mask.any():
+                _, bad_rows, columns = problems[reason]
+                bad_rows |= mask
+                columns.append(column)
+    for reason, (text, bad_rows, columns) in problems.items():
+        lines, total = _bad_rows(bad_rows)
         if total:
-            columns = mask.columns[mask.any()].tolist()
             raise FlowValidationError(
                 "invalid_values",
                 f"Hay {total} flujo(s) con valores {text} en las columnas {', '.join(columns)}. "

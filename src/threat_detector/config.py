@@ -19,6 +19,17 @@ TEST_ROWS = 82_332
 ARTIFACTS_DIR = ROOT / "artifacts"
 MODELS_DIR = ARTIFACTS_DIR / "models"
 FIGURES_DIR = ARTIFACTS_DIR / "figures"
+# Resultados de la búsqueda de modelos en validación: una fila por candidato (ml/training.py).
+MODEL_SEARCH_DIR = ARTIFACTS_DIR / "model_search"
+MODEL_SEARCH_CSV = MODEL_SEARCH_DIR / "search_results.csv"
+# Para el artículo: errores que ningún modelo puede evitar porque hay flujos idénticos con
+# etiquetas distintas (ml/evaluation.py); los escribe el notebook 05.
+UNAVOIDABLE_TYPE_ERRORS_CSV = MODEL_SEARCH_DIR / "unavoidable_type_errors.csv"
+LABEL_MIXED_GROUPS_CSV = MODEL_SEARCH_DIR / "label_mixed_groups.csv"
+# Resultados del entrenamiento final, para el artículo (train_final_models de ml/training.py).
+TEST_RESULTS_CSV = MODEL_SEARCH_DIR / "test_results.csv"
+TEST_PER_TYPE_CSV = MODEL_SEARCH_DIR / "test_per_type.csv"
+OOB_CSV = MODEL_SEARCH_DIR / "oob_vs_validation.csv"
 REGISTRY_PATH = ARTIFACTS_DIR / "registry.json"
 
 # Archivos de la carpeta de cada modelo, artifacts/models/<model_name>/ (contrato, sección 10).
@@ -45,6 +56,10 @@ MIN_CATEGORY_FRACTION = MIN_CATEGORY_COUNT / TRAIN_ROWS
 # El umbral de alerta debe dejar por encima al menos esta parte de los ataques de validación.
 TARGET_RECALL = 0.95
 
+# Al elegir entre combinaciones de modelos, dos puntajes (PR-AUC o F1 macro) empatan si su
+# diferencia con el mejor es menor que esto: el tercer decimal que muestra la app.
+SCORE_TIE_TOLERANCE = 0.001
+
 # Probabilidad de ataque mínima de cada severidad. La baja empieza en el umbral de cada modelo.
 SEVERITY_CRITICAL = 0.90
 SEVERITY_HIGH = 0.75
@@ -64,6 +79,11 @@ MAX_UPLOAD_MB = 25
 # Análisis de archivos subidos que se guardan en memoria; los de la muestra de demostración no
 # cuentan, porque se regeneran solos.
 MAX_STORED_ANALYSES = 15
+# Los modelos entrenados predicen los archivos subidos por bloques de este número de flujos: así la
+# memoria temporal de la predicción no crece con el archivo. HistGradientBoosting da exactamente lo
+# mismo que con todo el archivo de una vez; la MLP y la regresión logística, probabilidades que difieren
+# en menos de 1e-15 (alertas, severidad y tipo iguales), como el ruido que Random Forest ya tiene.
+PREDICTION_BATCH_ROWS = 10_000
 # Pausa entre flujos de la simulación con velocidad 1, en segundos; con velocidad s es este valor / s.
 SIMULATION_INTERVAL_SECONDS = 1.0
 SIMULATION_SPEEDS = (1, 2, 4)

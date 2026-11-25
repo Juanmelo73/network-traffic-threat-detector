@@ -4,7 +4,7 @@ import {
   ALERT_SEVERITIES, ApiError, SEVERITIES, attackType, errorNotice, fetchAnalysis, flowLink,
   formatInt, formatPercent, getChosenModel, h, icon, initPage, initRadioGroup, isMockModel,
   isSampleAnalysis, kpiCard, mockNotice, modelName, networkError, openFlowPanel, rateTips,
-  sampleAnalysisId, severityBadge, simulationUrl, formatDecimal,
+  sampleAnalysisId, severityBadge, simulationUrl, formatDecimal, formatValue, valueTitle,
 } from './common.js';
 
 // Pausa entre flujos a velocidad 1×, en ms (contrato, sección 8: 1 segundo dividido entre speed).
@@ -435,6 +435,11 @@ function renderProgress() {
   bar.firstElementChild.style.width = (state.total ? (state.shown / state.total) * 100 : 0).toFixed(1) + '%';
 }
 
+// Protocolo, servicio y estado de un flujo, como se muestran (formatValue escribe "vacío" si falta).
+function flowMeta(flow) {
+  return [formatValue(flow.proto, 'proto'), formatValue(flow.service, 'service'), formatValue(flow.state, 'state')].join(' · ');
+}
+
 function logItem(message) {
   const { flow, position } = message;
   return h('li', { class: 'tl-item sev-' + flow.severity + (flow.is_alert ? ' is-alert' : ' is-normal') },
@@ -447,7 +452,7 @@ function logItem(message) {
     severityBadge(flow.severity),
     h('span', { class: 'tl-main' },
       h('span', { class: 'tl-type' }, flow.predicted_attack_cat ? attackType(flow.predicted_attack_cat) : 'Sin alerta'),
-      h('span', { class: 'tl-meta' }, [flow.proto, flow.service, flow.state].map((v) => v ?? 'vacío').join(' · '))),
+      h('span', { class: 'tl-meta', title: valueTitle(flow.proto, 'proto') }, flowMeta(flow))),
     h('span', { class: 'tl-prob' }, formatPercent(flow.attack_probability))));
 }
 
@@ -467,7 +472,7 @@ function renderLastAlert() {
   box.replaceChildren(eyebrow,
     h('h3', {}, attackType(flow.predicted_attack_cat), h('span', { class: 'mono' }, '#' + flow.id)),
     h('div', { class: 'btn-row' }, severityBadge(flow.severity), h('span', { class: 'mono' }, formatPercent(flow.attack_probability))),
-    h('p', { class: 'help mono' }, [flow.proto, flow.service, flow.state].map((v) => v ?? 'vacío').join(' · ')),
+    h('p', { class: 'help mono', title: valueTitle(flow.proto, 'proto') }, flowMeta(flow)),
     h('div', {}, h('button', { type: 'button', class: 'btn btn-secondary btn-sm', onclick: () => showDetail(state.lastAlert) },
       'Ver detalle de la alerta')));
 }

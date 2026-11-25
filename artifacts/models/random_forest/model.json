@@ -1,0 +1,415 @@
+{
+  "name": "random_forest",
+  "display_name": "Random Forest",
+  "is_mock": false,
+  "trained_at": "2026-11-25T00:24:27Z",
+  "sklearn_version": "1.9.1",
+  "detector_type": "binary",
+  "preprocessing_method": "m2",
+  "use_ttl": true,
+  "numeric_cols": [
+    "dur",
+    "spkts",
+    "dpkts",
+    "sbytes",
+    "dbytes",
+    "rate",
+    "sttl",
+    "dttl",
+    "sload",
+    "dload",
+    "sloss",
+    "dloss",
+    "sinpkt",
+    "dinpkt",
+    "sjit",
+    "djit",
+    "synack",
+    "ackdat",
+    "smean",
+    "dmean",
+    "trans_depth",
+    "response_body_len",
+    "ct_srv_src",
+    "ct_state_ttl",
+    "ct_dst_ltm",
+    "ct_src_dport_ltm",
+    "ct_dst_sport_ltm",
+    "ct_dst_src_ltm",
+    "ct_ftp_cmd",
+    "ct_flw_http_mthd",
+    "ct_src_ltm",
+    "ct_srv_dst"
+  ],
+  "categorical_cols": [
+    "proto",
+    "service",
+    "state"
+  ],
+  "log_cols": [
+    "dur",
+    "spkts",
+    "dpkts",
+    "sbytes",
+    "dbytes",
+    "rate",
+    "sload",
+    "dload",
+    "sloss",
+    "dloss",
+    "sinpkt",
+    "dinpkt",
+    "sjit",
+    "djit",
+    "dmean",
+    "response_body_len",
+    "ct_srv_src",
+    "ct_dst_ltm",
+    "ct_dst_src_ltm",
+    "ct_src_ltm",
+    "ct_srv_dst"
+  ],
+  "feature_groups": {
+    "dur": [
+      "dur"
+    ],
+    "spkts": [
+      "spkts"
+    ],
+    "dpkts": [
+      "dpkts"
+    ],
+    "sbytes": [
+      "sbytes"
+    ],
+    "dbytes": [
+      "dbytes"
+    ],
+    "rate": [
+      "rate"
+    ],
+    "sttl": [
+      "sttl"
+    ],
+    "dttl": [
+      "dttl"
+    ],
+    "sload": [
+      "sload"
+    ],
+    "dload": [
+      "dload"
+    ],
+    "sloss": [
+      "sloss"
+    ],
+    "dloss": [
+      "dloss"
+    ],
+    "sinpkt": [
+      "sinpkt"
+    ],
+    "dinpkt": [
+      "dinpkt"
+    ],
+    "sjit": [
+      "sjit"
+    ],
+    "djit": [
+      "djit"
+    ],
+    "synack": [
+      "synack"
+    ],
+    "ackdat": [
+      "ackdat"
+    ],
+    "smean": [
+      "smean"
+    ],
+    "dmean": [
+      "dmean"
+    ],
+    "trans_depth": [
+      "trans_depth"
+    ],
+    "response_body_len": [
+      "response_body_len"
+    ],
+    "ct_srv_src": [
+      "ct_srv_src"
+    ],
+    "ct_state_ttl": [
+      "ct_state_ttl"
+    ],
+    "ct_dst_ltm": [
+      "ct_dst_ltm"
+    ],
+    "ct_src_dport_ltm": [
+      "ct_src_dport_ltm"
+    ],
+    "ct_dst_sport_ltm": [
+      "ct_dst_sport_ltm"
+    ],
+    "ct_dst_src_ltm": [
+      "ct_dst_src_ltm"
+    ],
+    "ct_ftp_cmd": [
+      "ct_ftp_cmd"
+    ],
+    "ct_flw_http_mthd": [
+      "ct_flw_http_mthd"
+    ],
+    "ct_src_ltm": [
+      "ct_src_ltm"
+    ],
+    "ct_srv_dst": [
+      "ct_srv_dst"
+    ],
+    "proto": [
+      "proto_arp",
+      "proto_ospf",
+      "proto_sctp",
+      "proto_tcp",
+      "proto_udp",
+      "proto_unas",
+      "proto_infrequent_sklearn"
+    ],
+    "service": [
+      "service_-",
+      "service_dns",
+      "service_ftp",
+      "service_ftp-data",
+      "service_http",
+      "service_pop3",
+      "service_smtp",
+      "service_ssh",
+      "service_infrequent_sklearn"
+    ],
+    "state": [
+      "state_CON",
+      "state_FIN",
+      "state_INT",
+      "state_REQ",
+      "state_infrequent_sklearn"
+    ]
+  },
+  "threshold": 0.48942289540953277,
+  "threshold_rule": {
+    "target_recall": 0.95,
+    "computed_on": "validation",
+    "validation_flows": 35068,
+    "validation_detection_rate": 0.9500167588402882,
+    "validation_false_alarm_rate": 0.05258928571428571
+  },
+  "can_explain": true,
+  "explanation_method": "shap_tree",
+  "test_metrics": {
+    "test_flows": 82332,
+    "detection": {
+      "detection_rate": 0.9706388423188917,
+      "false_alarm_rate": 0.1692972972972973,
+      "precision": 0.8753804834377797,
+      "f1": 0.920551900164231,
+      "pr_auc": 0.9886186786264951,
+      "roc_auc": 0.9848788240393398,
+      "accuracy": 0.9077515425351018,
+      "confusion": {
+        "tp": 44001,
+        "fp": 6264,
+        "tn": 30736,
+        "fn": 1331
+      }
+    },
+    "attack_type": {
+      "evaluated_flows": 44001,
+      "macro_f1": 0.5399500329167243,
+      "per_class": [
+        {
+          "attack_cat": "Generic",
+          "precision": 0.9996155324875048,
+          "recall": 0.9646472677161181,
+          "f1": 0.9818201434967903,
+          "support": 18867
+        },
+        {
+          "attack_cat": "Exploits",
+          "precision": 0.8333333333333334,
+          "recall": 0.6200778491898253,
+          "f1": 0.7110603622774693,
+          "support": 11047
+        },
+        {
+          "attack_cat": "Fuzzers",
+          "precision": 0.8558558558558559,
+          "recall": 0.6256431364478288,
+          "f1": 0.7228629176078945,
+          "support": 4859
+        },
+        {
+          "attack_cat": "DoS",
+          "precision": 0.3557692307692308,
+          "recall": 0.20857843137254903,
+          "f1": 0.26297898640296663,
+          "support": 4080
+        },
+        {
+          "attack_cat": "Reconnaissance",
+          "precision": 0.8731678133413102,
+          "recall": 0.8366294067067928,
+          "f1": 0.8545081967213115,
+          "support": 3489
+        },
+        {
+          "attack_cat": "Analysis",
+          "precision": 0.08953722334004025,
+          "recall": 0.1346444780635401,
+          "f1": 0.10755287009063444,
+          "support": 661
+        },
+        {
+          "attack_cat": "Backdoor",
+          "precision": 0.04899457389083945,
+          "recall": 0.5274914089347079,
+          "f1": 0.08966121495327103,
+          "support": 582
+        },
+        {
+          "attack_cat": "Shellcode",
+          "precision": 0.3136456211812627,
+          "recall": 0.8279569892473119,
+          "f1": 0.4549483013293944,
+          "support": 372
+        },
+        {
+          "attack_cat": "Worms",
+          "precision": 0.6666666666666666,
+          "recall": 0.6818181818181818,
+          "f1": 0.6741573033707865,
+          "support": 44
+        }
+      ],
+      "confusion": {
+        "labels": [
+          "Generic",
+          "Exploits",
+          "Fuzzers",
+          "DoS",
+          "Reconnaissance",
+          "Analysis",
+          "Backdoor",
+          "Shellcode",
+          "Worms"
+        ],
+        "matrix": [
+          [
+            18200,
+            420,
+            76,
+            105,
+            3,
+            13,
+            23,
+            23,
+            4
+          ],
+          [
+            6,
+            6850,
+            238,
+            724,
+            361,
+            353,
+            2318,
+            190,
+            7
+          ],
+          [
+            0,
+            233,
+            3040,
+            336,
+            23,
+            183,
+            726,
+            317,
+            1
+          ],
+          [
+            1,
+            526,
+            99,
+            851,
+            35,
+            250,
+            2257,
+            59,
+            2
+          ],
+          [
+            0,
+            121,
+            22,
+            53,
+            2919,
+            22,
+            274,
+            78,
+            0
+          ],
+          [
+            0,
+            40,
+            16,
+            157,
+            0,
+            89,
+            359,
+            0,
+            0
+          ],
+          [
+            0,
+            8,
+            19,
+            157,
+            0,
+            84,
+            307,
+            7,
+            0
+          ],
+          [
+            0,
+            12,
+            40,
+            8,
+            2,
+            0,
+            1,
+            308,
+            1
+          ],
+          [
+            0,
+            10,
+            2,
+            1,
+            0,
+            0,
+            1,
+            0,
+            30
+          ]
+        ]
+      }
+    }
+  },
+  "complexity": {
+    "training_seconds": 2.8973290819994872,
+    "training_flows": 140273,
+    "prediction_ms_per_1000_flows": 2.543443132827042,
+    "model_size_mb": 43.407028,
+    "hardware": "11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz, 16 núcleos lógicos"
+  }
+}

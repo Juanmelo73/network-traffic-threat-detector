@@ -44,7 +44,7 @@ indicador, fila del registro, punto de la animación.
 
 | Tipo | Clase | Ícono | Uso |
 |---|---|---|---|
-| Información | `.notice-info` | info | Métricas oficiales en Modelos |
+| Información | `.notice-info` | info | Métricas oficiales en Modelos; archivo analizado con otro modelo (consola) |
 | Aviso / modelo simulado | `.notice-warn` | flask-conical | "**Modelo simulado.** Sus probabilidades, tipos y explicaciones son inventados: sirven para probar la aplicación, no para evaluar el tráfico." (consola y simulación); "**Métricas inventadas.** No sirven para evaluar el modelo." (Modelos) |
 | Error | `.notice-error`, `role="alert"` | circle-x | El `message` de la API tal cual |
 | Correcto | `.notice-ok`, `role="status"` | circle-check | "Análisis listo." |
@@ -52,6 +52,21 @@ indicador, fila del registro, punto de la animación.
 
 El aviso de modelo simulado aparece solo si `GET /api/models` dice que el modelo es simulado; si el
 modelo no está en la lista, se muestra su nombre sin etiqueta y sin aviso.
+
+**La muestra sigue al modelo elegido:** si la consola va a abrir la muestra de demostración de un
+modelo distinto del elegido (al volver por el menú o con «Atrás», o por un enlace), abre la muestra
+del modelo elegido, en el mismo modo (con o sin etiquetas) y con el mismo flujo si el enlace trae
+`&flow=`. Así los indicadores, sus ayudas y la cola son siempre del modelo de la cabecera
+(`followChosenModel` en `js/analysis.js`). Si el navegador restaura la consola desde su caché de
+páginas (bfcache) al ir «Atrás», la consola se recarga para aplicar esta regla.
+
+**Archivo analizado con otro modelo:** elegir otro modelo no cambia un archivo ya analizado, porque
+no se puede volver a analizar sin el archivo. Si el análisis abierto se hizo con un modelo distinto
+del elegido, el título del resumen pasa a "Resumen del análisis con <modelo del análisis>" y un
+aviso dice: "Este análisis se hizo con **<modelo del análisis>**. El modelo elegido ahora es
+**<modelo elegido>**: los análisis nuevos lo usarán. Para analizarlo con <modelo elegido>, vuelve a
+cargar el archivo." Si los dos modelos coinciden, no hay aviso. Va en `#modelSlot` de `index.html`
+(`renderModelNotice` en `js/analysis.js`).
 
 **Único error propio del frontend — `network_error`:** cuando el navegador no recibe respuesta del
 servidor (la app detenida, la conexión cortada o el WebSocket cerrado sin `end` ni `error`). La API
@@ -94,6 +109,19 @@ muestra el mensaje del contrato y lo olvida.
 Tarjeta de probabilidad con severidad y umbral, datos del flujo, resultado si hay etiquetas, y
 explicación con barras centradas en cero (10 variables y "Ver todas"). Al abrir, el foco pasa al
 título; Esc lo cierra y devuelve el foco a quien lo abrió. En celular ocupa toda la pantalla.
+
+## Valores que se muestran con otro texto
+
+El valor `unas` de `proto` se muestra como **unassigned**. Al pasar el mouse aparece "Valor en el
+archivo: unas". Se cambia en la columna Protocolo de la cola, en los datos y la explicación del panel
+lateral, y en el registro y la última alerta de la simulación. Es solo presentación: los CSV, la
+API, el preprocesamiento y los modelos siguen usando `unas`. La tabla de equivalencias está en
+`DISPLAY_VALUES` de `js/common.js`.
+
+La descripción oficial de UNSW-NB15 (`NUSW-NB15_features.csv`) no explica este valor; solo
+describe `proto` como "Transaction protocol". La fuente es el código de Argus: en la función
+`ArgusPrintProto` de `common/argus_util.c` (github.com/openargus/clients), cuando el número de
+protocolo IP no tiene nombre en su tabla, se escribe `unas`.
 
 ## Gráficos de Modelos (sin librerías)
 

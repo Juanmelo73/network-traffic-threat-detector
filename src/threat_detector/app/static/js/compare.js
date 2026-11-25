@@ -24,7 +24,7 @@ const GROUPS = [
   {
     title: 'Detección de ataques',
     rows: [
-      { label: 'Detección', get: (e) => e.metrics.detection.detection_rate, format: formatPercent, dir: 'max' },
+      { label: 'Detección (recall)', get: (e) => e.metrics.detection.detection_rate, format: formatPercent, dir: 'max' },
       { label: 'Falsas alarmas', get: (e) => e.metrics.detection.false_alarm_rate, format: formatPercent, dir: 'min' },
       { label: 'Precisión', get: (e) => e.metrics.detection.precision, format: formatPercent, dir: 'max' },
       { label: 'F1', get: (e) => e.metrics.detection.f1, format: formatScore, dir: 'max' },
@@ -91,7 +91,7 @@ function renderCards() {
       model.is_mock ? h('div', { class: 'notice notice-warn' }, icon('flask-conical'),
         h('p', {}, h('strong', {}, 'Métricas inventadas.'), ' No sirven para evaluar el modelo.')) : null,
       h('dl', { class: 'mini-metrics' },
-        h('div', {}, h('dt', {}, 'Detección'), h('dd', {}, formatPercent(metrics.detection.detection_rate))),
+        h('div', {}, h('dt', {}, 'Detección (recall)'), h('dd', {}, formatPercent(metrics.detection.detection_rate))),
         h('div', {}, h('dt', {}, 'Falsas alarmas'), h('dd', {}, formatPercent(metrics.detection.false_alarm_rate))),
         h('div', {}, h('dt', {}, 'PR-AUC'), h('dd', {}, formatScore(metrics.detection.pr_auc))),
         h('div', {}, h('dt', {}, 'Umbral'), h('dd', {}, formatDecimal(model.threshold)))),
@@ -161,7 +161,7 @@ function detectionBlock(entry) {
   return h('div', { class: 'detail-block' },
     h('h3', {}, 'Detección de ataques'),
     h('dl', { class: 'hbars' },
-      bar('Detección', d.detection_rate, formatPercent), bar('Falsas alarmas', d.false_alarm_rate, formatPercent),
+      bar('Detección (recall)', d.detection_rate, formatPercent), bar('Falsas alarmas', d.false_alarm_rate, formatPercent),
       bar('Precisión', d.precision, formatPercent), bar('F1', d.f1, formatScore),
       bar('PR-AUC', d.pr_auc, formatScore), bar('ROC-AUC', d.roc_auc, formatScore),
       bar('Exactitud (referencia)', d.accuracy, formatPercent, true)),

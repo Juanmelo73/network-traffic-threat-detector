@@ -14,10 +14,15 @@ import pytest
 import uvicorn
 from conftest import structure, write_json
 from fastapi.testclient import TestClient
+from pydantic import TypeAdapter
+from sklearn.ensemble import HistGradientBoostingClassifier, RandomForestClassifier
+from sklearn.linear_model import LogisticRegression
+from sklearn.pipeline import Pipeline
 from starlette.websockets import WebSocketDisconnect
 
 from threat_detector.app.analyses import (
     AnalysisStore,
+    compact_flows,
     parse_sample_id,
     read_flows,
     run_analysis,
@@ -25,8 +30,10 @@ from threat_detector.app.analyses import (
     validate_upload,
 )
 from threat_detector.app import routes
+from threat_detector.app.schemas import AnalysisResponse
 from threat_detector.app.main import create_app
 from threat_detector.app.mock import MockPredictor
+from threat_detector.app import predictors as predictors_module
 from threat_detector.app.predictors import PipelinePredictor, build_predictors
 from threat_detector.app.routes import MAX_UPLOAD_BYTES
 from threat_detector.artifacts import (
@@ -56,6 +63,8 @@ from threat_detector.dataset import (
     TARGET_COLS,
     FlowValidationError,
 )
+from threat_detector.ml.preprocessing import TTL_COLS, build_preprocessor
+from threat_detector.ml.training import feature_groups
 
 
 @pytest.fixture(scope="module")
@@ -154,8 +163,14 @@ def test_mock_contributions_add_up_positive_exactly_on_alerts(mock, sample_flows
 # build_predictors
 
 
-def test_project_artifacts_give_only_the_mock_predictor():
+def test_project_artifacts_give_a_pipeline_predictor_per_model():
     predictors = build_predictors(load_artifacts()[1])
+    assert list(predictors) == ["hist_gradient_boosting", "random_forest", "mlp", "logistic_regression"]
+    assert all(isinstance(predictor, PipelinePredictor) for predictor in predictors.values())
+
+
+def test_app_tests_use_only_the_mock_predictor(mock_artifacts):
+    predictors = build_predictors(load_artifacts(mock_artifacts)[1])
     assert list(predictors) == ["mock"]
     assert isinstance(predictors["mock"], MockPredictor)
 
@@ -174,11 +189,101 @@ def test_trained_models_get_a_pipeline_predictor(exported, sample_flows):
         assert predictor.explain(sample_flows.iloc[0]) is None
 
 
-def test_pipeline_explanation_is_not_defined_yet(exported, sample_flows):
-    models = load_artifacts(exported)[1]
-    predictor = PipelinePredictor({**models["model_a"]["info"], "can_explain": True}, models["model_a"]["model"])
-    with pytest.raises(NotImplementedError):
+# PipelinePredictor.explain
+
+def log_odds(probability):
+    """log(p / (1 − p)): la salida en log-odds de la probabilidad."""
+    return np.log(probability / (1 - probability))
+
+
+# Detectores de prueba diminutos, uno por método de explicación: (método de preprocesamiento, estimador, explanation_method).
+EXPLAINED_MODELS = {
+    "hist_gradient_boosting": ("m1", lambda: HistGradientBoostingClassifier(max_iter=20, random_state=42), "shap_tree"),
+    "random_forest": ("m2", lambda: RandomForestClassifier(n_estimators=5, max_depth=4, random_state=42), "shap_tree"),
+    "logistic_regression": ("m2", lambda: LogisticRegression(max_iter=1000), "linear_logit"),
+    "hist_gradient_boosting_m3": ("m3", lambda: HistGradientBoostingClassifier(max_iter=20, random_state=42), "shap_tree"),
+}
+
+
+def explained_predictor(kind, flows):
+    """PipelinePredictor con un detector de prueba entrenado con sample_flows.csv y lo que explain lee de model.json."""
+    method, estimator, explanation = EXPLAINED_MODELS[kind]
+    detector = Pipeline([("preprocessor", build_preprocessor(method)), ("model", estimator())]).fit(flows, flows["label"])
+    info = {"can_explain": True, "explanation_method": explanation, "feature_groups": feature_groups(detector["preprocessor"])}
+    return PipelinePredictor(info, {"detector": detector, "attack_type_classifier": detector})
+
+
+@pytest.mark.parametrize("kind", list(EXPLAINED_MODELS))
+def test_explanation_has_one_entry_per_variable_sorted_by_effect(kind, sample_flows):
+    predictor = explained_predictor(kind, sample_flows)
+    flow = sample_flows.iloc[3]
+    contributions = predictor.explain(flow)
+    assert sorted(c["feature"] for c in contributions) == sorted(predictor.info["feature_groups"])
+    effects = [abs(c["contribution"]) for c in contributions]
+    assert effects == sorted(effects, reverse=True)
+    values = {c["feature"]: c["value"] for c in contributions}
+    assert values["proto"] == flow["proto"] and values["sbytes"] == flow["sbytes"]
+    assert json.loads(json.dumps(contributions)) == contributions
+    # Un modelo sin TTL no devuelve sus variables.
+    assert any(c in values for c in TTL_COLS) == (not kind.endswith("m3"))
+
+
+@pytest.mark.parametrize("kind", list(EXPLAINED_MODELS))
+def test_explanation_adds_up_to_the_model_output(kind, sample_flows):
+    # Positivo empuja hacia "ataque": la suma de las contribuciones más la base da la salida del
+    # modelo para la clase 1 (log-odds en HistGradientBoosting y regresión logística, probabilidad en Random Forest).
+    predictor = explained_predictor(kind, sample_flows)
+    detector = predictor.model["detector"]
+    estimator = detector["model"]
+    for position in (0, 3, 250, 499):
+        flow = sample_flows.iloc[position]
+        total = sum(c["contribution"] for c in predictor.explain(flow))
+        probability = detector.predict_proba(flow.to_frame().T.infer_objects())[0, list(estimator.classes_).index(1)]
+        if isinstance(estimator, LogisticRegression):
+            expected, base = log_odds(probability), estimator.intercept_[0]
+        elif isinstance(estimator, RandomForestClassifier):
+            expected, base = probability, predictor._explainer.expected_value[list(estimator.classes_).index(1)]
+        else:
+            expected, base = log_odds(probability), np.ravel(predictor._explainer.expected_value)[0]
+        assert total + base == pytest.approx(expected, abs=1e-6)
+
+
+def test_explainer_is_built_once(sample_flows):
+    predictor = explained_predictor("random_forest", sample_flows)
+    predictor.explain(sample_flows.iloc[0])
+    explainer = predictor._explainer
+    predictor.explain(sample_flows.iloc[1])
+    assert predictor._explainer is explainer
+
+
+def test_attack_class_is_found_by_name():
+    # Si el ataque fuera classes_[0], las contribuciones de un modelo binario cambian de signo.
+    class Linear:
+        coef_ = np.array([[2.0, -1.0]])
+
+    features = pd.DataFrame([[1.0, 3.0]])
+    Linear.classes_ = np.array([0, 1])
+    np.testing.assert_allclose(predictors_module._linear_contributions(Linear, features), [2.0, -3.0])
+    Linear.classes_ = np.array([1, 0])
+    np.testing.assert_allclose(predictors_module._linear_contributions(Linear, features), [-2.0, 3.0])
+
+
+def test_unknown_explanation_method_is_an_error(sample_flows):
+    predictor = explained_predictor("logistic_regression", sample_flows)
+    predictor.info["explanation_method"] = "otro"
+    with pytest.raises(ValueError, match="Método de explicación desconocido: otro"):
         predictor.explain(sample_flows.iloc[0])
+
+
+def test_project_models_explain_as_decided(sample_flows):
+    # Los 4 modelos registrados: los que explican dan una entrada por variable; MLP responde None.
+    predictors = build_predictors(load_artifacts()[1])
+    for name, predictor in predictors.items():
+        contributions = predictor.explain(sample_flows.iloc[0])
+        if name == "mlp":
+            assert contributions is None
+        else:
+            assert sorted(c["feature"] for c in contributions) == sorted(predictor.info["feature_groups"])
 
 
 # read_flows
@@ -431,9 +536,9 @@ def test_new_ids_are_twelve_hex_characters_and_unique():
 
 
 @pytest.fixture
-def client():
-    """La app con el artifacts/ real (solo el modelo simulado); with hace que corra el lifespan."""
-    with TestClient(create_app()) as test_client:
+def client(mock_artifacts):
+    """La app con solo el modelo simulado registrado; with hace que corra el lifespan."""
+    with TestClient(create_app(mock_artifacts)) as test_client:
         yield test_client
 
 
@@ -472,12 +577,12 @@ def test_uploaded_file_gives_the_same_flows_as_the_sample(client, sample_flows):
     assert {**body, "analysis_id": None} == {**sample, "analysis_id": None}
 
 
-def test_get_analysis_returns_what_predict_returned(client, sample_flows):
+def test_get_analysis_returns_what_predict_returned(client, sample_flows, mock_artifacts):
     created = upload(client, csv_bytes(sample_flows), use_labels="false").json()
     assert client.get(f"/api/analysis/{created['analysis_id']}").json() == created
     sample = client.post("/api/predict", data={"use_sample": "true"}).json()
     # Un servidor recién iniciado regenera la muestra.
-    with TestClient(create_app()) as fresh:
+    with TestClient(create_app(mock_artifacts)) as fresh:
         assert fresh.get("/api/analysis/sample-mock").json() == sample
 
 
@@ -613,11 +718,11 @@ def test_damaged_form_is_an_invalid_request(client):
                                        "message": "El pedido no es válido."}
 
 
-def test_unexpected_errors_hide_the_python_error(sample_flows):
+def test_unexpected_errors_hide_the_python_error(sample_flows, mock_artifacts):
     def broken_predict(flows):
         raise RuntimeError("detalle interno")
 
-    with TestClient(create_app(), raise_server_exceptions=False) as test_client:
+    with TestClient(create_app(mock_artifacts), raise_server_exceptions=False) as test_client:
         test_client.app.state.predictors["mock"].predict = broken_predict
         response = upload(test_client, csv_bytes(sample_flows))
     error = error_of(response, 500)
@@ -1005,10 +1110,10 @@ def free_port():
 
 
 @pytest.fixture(scope="module")
-def live_server():
-    """La app corriendo con Uvicorn en un puerto libre, con el artifacts/ real."""
+def live_server(mock_artifacts):
+    """La app corriendo con Uvicorn en un puerto libre, con solo el modelo simulado registrado."""
     port = free_port()
-    server = uvicorn.Server(uvicorn.Config(create_app(), host="127.0.0.1", port=port, log_level="warning"))
+    server = uvicorn.Server(uvicorn.Config(create_app(mock_artifacts), host="127.0.0.1", port=port, log_level="warning"))
     thread = threading.Thread(target=server.run, daemon=True)
     thread.start()
     for _ in range(100):
@@ -1218,6 +1323,16 @@ def test_direct_link_to_a_flow(page):
     page.goto("/index.html?analysis=sample-mock&flow=999999999")
     page.locator(".drawer [role=alert]").wait_for()
     assert "El flujo 999999999 no está en este análisis." in page.locator(".drawer").inner_text()
+
+
+def test_panel_says_when_the_model_does_not_explain(page):
+    # Como responde /api/explain un modelo sin explicación (por ejemplo, la red neuronal): can_explain = false.
+    flow = api_json(page, "/api/analysis/sample-mock")["flows"][0]
+    response = {"analysis_id": "sample-mock", "flow": flow, "can_explain": False, "contributions": None}
+    page.route("**/api/explain/**", lambda route: route.fulfill(json=response))
+    page.goto(f"/index.html?analysis=sample-mock&flow={flow['id']}")
+    page.get_by_text("Este modelo no explica sus decisiones.").wait_for()
+    assert page.locator(".expl-list li").count() == 0
 
 
 def test_link_to_a_missing_analysis(page):
@@ -1521,7 +1636,7 @@ def test_models_page_with_the_mock_model(page):
     card = page.locator(".model-card")
     assert "Simulado" in card.inner_text() and "Métricas inventadas." in card.inner_text()
     assert "En uso en la consola y la simulación" in card.inner_text()
-    assert compare_cells(page, "Detección") == [percent(d["detection_rate"])]
+    assert compare_cells(page, "Detección (recall)") == [percent(d["detection_rate"])]
     assert compare_cells(page, "PR-AUC") == [score(d["pr_auc"])]
     assert compare_cells(page, "F1 macro (9 tipos)") == [score(metrics["attack_type"]["macro_f1"])]
     assert compare_cells(page, "Tiempo de entrenamiento") == ["No aplica"]
@@ -1569,7 +1684,7 @@ def test_best_values_and_choosing_a_model(page):
     columns = ["mock", "model_a", "model_b"]
     best = lambda label: [columns[i] for i, td in enumerate(compare_row(page, label).locator("td").all()[1:])
                           if "best" in (td.get_attribute("class") or "")]
-    assert best("Detección") == ["model_a"]
+    assert best("Detección (recall)") == ["model_a"]
     assert best("Falsas alarmas") == ["model_a", "model_b"]
     assert best("Precisión") == ["model_b"]
     assert compare_cells(page, "Precisión")[1] == "—"
@@ -1609,3 +1724,336 @@ def test_models_page_fits_small_screens(page, width):
     page.set_viewport_size({"width": width, "height": 800})
     open_models(page)
     assert page.evaluate("document.documentElement.scrollWidth") <= width
+
+
+
+# Valores que la interfaz muestra con otro texto ("unas" de proto se muestra "unassigned")
+
+UNAS_TITLE = "Valor en el archivo: unas"
+
+
+def upload_unas_flows(page, sample_flows):
+    """Sube un flujo tcp y 8 con proto "unas" de la muestra; devuelve el analysis_id."""
+    flows = pd.concat([sample_flows[sample_flows["proto"] == "tcp"].head(1),
+                       sample_flows[sample_flows["proto"] == "unas"].head(8)])
+    page.goto("/index.html")
+    page.locator("#fileInput").set_input_files({"name": "unas.csv", "mimeType": "text/csv", "buffer": csv_bytes(flows)})
+    page.locator("#results").wait_for(state="visible")
+    return re.search(r"\?analysis=([0-9a-f]{12})$", page.url).group(1)
+
+
+def test_unas_is_shown_as_unassigned_in_the_console(page, sample_flows):
+    analysis_id = upload_unas_flows(page, sample_flows)
+    # La API sigue devolviendo el valor original: el cambio es solo de presentación.
+    flows = api_json(page, f"/api/analysis/{analysis_id}")["flows"]
+    assert sorted(f["proto"] for f in flows) == ["tcp"] + ["unas"] * 8
+
+    page.locator('#filters [data-value="all"]').click()
+    cells = page.locator("#queueTable tbody tr td.cat:nth-child(5)")
+    assert sorted(cells.all_inner_texts()) == ["tcp"] + ["unassigned"] * 8
+    assert page.locator("#queueTable td.cat[title]").evaluate_all("tds => tds.map(td => td.title)") == [UNAS_TITLE] * 8
+
+    unas_id = next(f["id"] for f in flows if f["proto"] == "unas")
+    page.locator(f'#queueTable tbody tr[data-id="{unas_id}"]').click()
+    drawer = page.locator(".drawer")
+    page.locator(".expl-list li").first.wait_for()
+    proto_value = page.locator(".kv dd").nth(1)
+    assert proto_value.inner_text() == "unassigned" and proto_value.get_attribute("title") == UNAS_TITLE
+    page.get_by_role("button", name=re.compile(r"^Ver todas")).click()
+    explained = page.locator('.expl-item:has([data-tech="proto"]) .val')
+    assert explained.inner_text() == "unassigned" and explained.get_attribute("title") == UNAS_TITLE
+    # "unas" no se ve en ninguna parte: solo queda en el texto al pasar el mouse.
+    assert not re.search(r"\bunas\b", drawer.inner_text() + page.locator("#queueTable").inner_text())
+
+
+def test_unas_is_shown_as_unassigned_in_the_simulation(page, monkeypatch, sample_flows):
+    monkeypatch.setattr(routes, "SIMULATION_INTERVAL_SECONDS", 0.002)
+    page.emulate_media(reduced_motion="reduce")
+    analysis_id = upload_unas_flows(page, sample_flows)
+    flows = api_json(page, f"/api/analysis/{analysis_id}")["flows"]
+    open_simulation(page, f"/simulation.html?analysis={analysis_id}")
+    page.locator("#playBtn").click()
+    wait_until_ended(page)
+
+    meta = page.locator("#logList .tl-meta")
+    assert sorted(m.split(" · ")[0] for m in meta.all_inner_texts()) == ["tcp"] + ["unassigned"] * 8
+    assert meta.evaluate_all("ms => ms.filter(m => m.title).length") == 8
+    # La última alerta es la última del archivo que dio alerta; si es de "unas", también se muestra cambiada.
+    last_alert = [f for f in flows if f["is_alert"]][-1]
+    shown_proto = "unassigned" if last_alert["proto"] == "unas" else last_alert["proto"]
+    assert page.locator("#lastAlert .help").inner_text().startswith(shown_proto + " · ")
+    assert not re.search(r"\bunas\b", page.locator("#logList").inner_text() + page.locator("#lastAlert").inner_text())
+
+# Los modelos entrenados del artifacts/ real (solo leen)
+
+EXPLAINING_MODELS = ["hist_gradient_boosting", "random_forest", "logistic_regression"]
+MODEL_NAMES = {
+    "hist_gradient_boosting": "HistGradientBoosting", "random_forest": "Random Forest",
+    "mlp": "Red neuronal (MLP)", "logistic_regression": "Regresión logística (modelo base)",
+}
+
+
+@pytest.fixture(scope="module")
+def real_client():
+    """La app con el artifacts/ real: los 4 modelos entrenados."""
+    with TestClient(create_app()) as test_client:
+        yield test_client
+
+
+@pytest.mark.parametrize("name", [*EXPLAINING_MODELS, "mlp"])
+def test_project_models_explain_flows_without_labels(name, real_client, sample_flows):
+    # La muestra sin etiquetas y un archivo subido sin label ni attack_cat.
+    unlabeled = sample_flows.drop(columns=TARGET_COLS)
+    analyses = [
+        real_client.post("/api/predict", data={"use_sample": "true", "use_labels": "false", "model": name}).json(),
+        upload(real_client, csv_bytes(unlabeled), model=name).json(),
+    ]
+    for analysis in analyses:
+        assert analysis["has_labels"] is False and analysis["model"]["name"] == name
+        flow_id = analysis["flows"][0]["id"]
+        body = real_client.get(f"/api/explain/{flow_id}", params={"analysis_id": analysis["analysis_id"]}).json()
+        if name == "mlp":
+            assert (body["can_explain"], body["contributions"]) == (False, None)
+        else:
+            assert body["can_explain"] is True
+            assert len(body["contributions"]) == 35
+
+
+@pytest.fixture(scope="module")
+def real_live_server():
+    """La app con el artifacts/ real corriendo con Uvicorn en un puerto libre."""
+    port = free_port()
+    server = uvicorn.Server(uvicorn.Config(create_app(), host="127.0.0.1", port=port, log_level="warning"))
+    thread = threading.Thread(target=server.run, daemon=True)
+    thread.start()
+    for _ in range(200):
+        if server.started:
+            break
+        time.sleep(0.05)
+    yield f"http://127.0.0.1:{port}"
+    server.should_exit = True
+    thread.join(timeout=5)
+
+
+@pytest.fixture
+def real_page(browser, real_live_server):
+    context = browser.new_context(base_url=real_live_server)
+    yield context.new_page()
+    context.close()
+
+
+def choose_in_browser(page, name):
+    """Guarda el modelo elegido en el navegador, como lo hace la pantalla Modelos."""
+    page.goto("/index.html")
+    page.evaluate(f"localStorage.setItem('ntd-model', '{name}')")
+
+
+def test_header_pill_of_a_trained_model_has_no_extra_text(real_page):
+    real_page.goto("/index.html")
+    pill = real_page.locator("#modelPill")
+    pill.wait_for(state="visible")
+    assert pill.inner_text().split() == "Modelo en uso: HistGradientBoosting".split()
+
+
+@pytest.mark.parametrize("name", EXPLAINING_MODELS)
+def test_panel_without_labels_shows_the_variables(name, real_page):
+    choose_in_browser(real_page, name)
+    load_sample(real_page, labeled=False)
+    assert "Sin etiquetas" in real_page.locator("#analysisBar").inner_text()
+    real_page.locator("#queueTable tbody tr").first.click()
+    real_page.locator(".expl-list li").first.wait_for()
+    assert real_page.locator(".expl-list li").count() == 10
+    assert real_page.get_by_role("button", name="Ver todas (35)").is_visible()
+
+
+def wait_for_model(page, display_name):
+    """Hasta que la barra del análisis muestra ese modelo."""
+    page.wait_for_function(
+        "name => document.getElementById('analysisBar').textContent.includes('Modelo: ' + name)", arg=display_name)
+
+
+def choose_in_models_screen(page, display_name):
+    page.goto("/compare.html")
+    page.locator(".model-card", has_text=display_name).get_by_role("button", name="Usar este modelo").click()
+
+
+def rate_tips_shown(page):
+    return [tip.text_content() for tip in page.locator(".kpi.has-tip .kpi-tip").all()]
+
+
+@pytest.mark.parametrize("way_back", ["menu", "back"])
+def test_sample_follows_the_chosen_model(real_page, way_back):
+    # La muestra con etiquetas y la red neuronal; después se eligen otros modelos en Modelos y se vuelve
+    # a la consola por el menú o con «Atrás». Siempre se ve la muestra del modelo elegido.
+    choose_in_browser(real_page, "mlp")
+    load_sample(real_page)
+    wait_for_model(real_page, "Red neuronal (MLP)")
+    shown_tips = {tuple(rate_tips_shown(real_page))}
+    for name, display_name in [("random_forest", "Random Forest"), ("logistic_regression", "Regresión logística (modelo base)")]:
+        choose_in_models_screen(real_page, display_name)
+        if way_back == "menu":
+            real_page.get_by_role("link", name="Consola").first.click()
+        else:
+            real_page.go_back()
+        wait_for_model(real_page, display_name)
+        assert real_page.url.endswith(f"index.html?analysis=sample-{name}")
+        assert "Con etiquetas" in real_page.locator("#analysisBar").inner_text()
+        assert real_page.locator("#modelSlot").inner_text() == ""
+        assert real_page.locator("#h-summary").text_content() == "Resumen del análisis"
+        # Las ayudas de Detección y Falsas alarmas son las del modelo elegido.
+        flows = api_json(real_page, f"/api/analysis/sample-{name}")["flows"]
+        tips = rate_tips_shown(real_page)
+        assert [tip.split(" Se calcula")[0] for tip in tips] == list(rate_tip_texts(flows))
+        shown_tips.add(tuple(tips))
+    # Las ayudas cambiaron con cada modelo.
+    assert len(shown_tips) == 3
+
+
+def test_page_restored_from_the_back_forward_cache_follows_the_chosen_model(real_page):
+    # Chromium con Playwright recarga al ir «Atrás»; un navegador puede restaurar la página guardada
+    # (bfcache) sin ejecutarla. Se simula esa restauración con el mismo evento que lanza el navegador.
+    choose_in_browser(real_page, "mlp")
+    load_sample(real_page)
+    wait_for_model(real_page, "Red neuronal (MLP)")
+    real_page.evaluate("window.notReloaded = true; localStorage.setItem('ntd-model', 'random_forest')")
+    real_page.evaluate("window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true }))")
+    wait_for_model(real_page, "Random Forest")
+    assert real_page.evaluate("window.notReloaded") is None
+    assert "Modelo en uso: Random Forest" in " ".join(real_page.locator("#modelPill").inner_text().split())
+
+
+def test_sample_keeps_its_labels_mode_and_flow_link(real_page, sample_flows):
+    # Un enlace a un flujo de la muestra sin etiquetas de la red neuronal, con HistGradientBoosting elegido.
+    flow_id = int(sample_flows["id"].iloc[0])
+    choose_in_browser(real_page, "hist_gradient_boosting")
+    real_page.goto(f"/index.html?analysis=sample-mlp-unlabeled&flow={flow_id}")
+    wait_for_model(real_page, "HistGradientBoosting")
+    assert "Sin etiquetas" in real_page.locator("#analysisBar").inner_text()
+    assert "analysis=sample-hist_gradient_boosting-unlabeled" in real_page.url
+    # Se abre el mismo flujo, ahora con la explicación de HistGradientBoosting.
+    assert f"flow={flow_id}" in real_page.url
+    real_page.locator(".expl-list li").first.wait_for()
+    assert real_page.locator(".expl-list li").count() == 10
+
+
+def test_notice_for_an_uploaded_file_asks_to_upload_it_again(real_page):
+    choose_in_browser(real_page, "mlp")
+    real_page.goto("/index.html")
+    real_page.locator("#fileInput").set_input_files(str(DEMO_SAMPLE_CSV))
+    real_page.locator("#results").wait_for(state="visible")
+    real_page.evaluate("localStorage.setItem('ntd-model', 'random_forest')")
+    real_page.goto("/index.html")
+    real_page.locator("#results").wait_for(state="visible")
+    text = real_page.locator("#modelSlot").inner_text()
+    assert "Este análisis se hizo con Red neuronal (MLP). El modelo elegido ahora es Random Forest" in text
+    assert "Para analizarlo con Random Forest, vuelve a cargar el archivo." in text
+    assert real_page.locator("#modelSlot button").count() == 0
+    # Los indicadores dicen de qué modelo son; el archivo sigue siendo el de la red neuronal.
+    assert real_page.locator("#h-summary").text_content() == "Resumen del análisis con Red neuronal (MLP)"
+    assert "Modelo: Red neuronal (MLP)" in real_page.locator("#analysisBar").inner_text()
+    # Al volver a cargarlo, se analiza con el elegido y el aviso desaparece.
+    real_page.locator("#fileInput").set_input_files(str(DEMO_SAMPLE_CSV))
+    wait_for_model(real_page, "Random Forest")
+    assert real_page.locator("#modelSlot").inner_text() == ""
+    assert real_page.locator("#h-summary").text_content() == "Resumen del análisis"
+
+
+# Memoria de los análisis: respuesta JSON directa, guardado compacto y predicción por bloques
+
+ANALYSIS_ADAPTER = TypeAdapter(AnalysisResponse)
+# Diferencia permitida en la probabilidad (Random Forest ya la tiene de una predicción a otra).
+PROBABILITY_NOISE = 1e-15
+
+
+def validated_json(analysis):
+    """El JSON que daba FastAPI al validar con response_model, como antes del cambio; falla si no cumple el esquema."""
+    return ANALYSIS_ADAPTER.dump_json(ANALYSIS_ADAPTER.validate_python(analysis.response()), by_alias=True)
+
+
+def messy_flows(sample_flows):
+    """La muestra con celdas que la app acepta: categóricas vacías y un id escrito como decimal."""
+    flows = sample_flows.astype({ID_COL: object})
+    flows.loc[3, "service"] = np.nan
+    flows.loc[7, "state"] = np.nan
+    flows.loc[0, ID_COL] = f"{flows.loc[0, ID_COL]}.0"
+    return flows
+
+
+def test_analysis_json_is_the_same_as_with_validation(client, sample_flows):
+    responses = [
+        client.post("/api/predict", data={"use_sample": "true"}),
+        client.post("/api/predict", data={"use_sample": "true", "use_labels": "false"}),
+        upload(client, csv_bytes(messy_flows(sample_flows))),
+        upload(client, csv_bytes(messy_flows(sample_flows)), use_labels="false"),
+    ]
+    for response in responses:
+        assert response.status_code == 200 and response.headers["content-type"] == "application/json"
+        analysis_id = response.json()["analysis_id"]
+        expected = validated_json(client.app.state.analyses.get(analysis_id))
+        assert response.content == expected
+        assert client.get(f"/api/analysis/{analysis_id}").content == expected
+
+
+@pytest.mark.parametrize("name", [*EXPLAINING_MODELS, "mlp"])
+def test_project_models_json_is_the_same_as_with_validation(name, real_client, sample_flows):
+    for data in ({"use_sample": "true"}, {"use_sample": "true", "use_labels": "false"}):
+        response = real_client.post("/api/predict", data={**data, "model": name})
+        analysis = real_client.app.state.analyses.get(response.json()["analysis_id"])
+        assert response.content == validated_json(analysis)
+    response = upload(real_client, csv_bytes(messy_flows(sample_flows)), model=name)
+    assert response.content == validated_json(real_client.app.state.analyses.get(response.json()["analysis_id"]))
+
+
+def test_openapi_documents_the_analysis_responses(client):
+    # Las rutas devuelven el JSON directamente, pero su response_model sigue en la documentación.
+    paths = client.get("/openapi.json").json()["paths"]
+    for path, method in (("/api/predict", "post"), ("/api/analysis/{analysis_id}", "get")):
+        schema = paths[path][method]["responses"]["200"]["content"]["application/json"]["schema"]
+        assert schema == {"$ref": "#/components/schemas/AnalysisResponse"}
+
+
+def test_compact_flows_keep_the_values(sample_flows):
+    flows = messy_flows(sample_flows).infer_objects()
+    flows["sbytes"] = flows["sbytes"].astype(np.int64)
+    flows.loc[1, "sbytes"] = 2**31  # no cabe en int32: la columna queda en int64
+    compact = compact_flows(flows)
+    for column in flows.columns:
+        assert compact[column].astype(object).where(compact[column].notna(), None).tolist() == \
+            flows[column].astype(object).where(flows[column].notna(), None).tolist(), column
+    assert compact["sbytes"].dtype == np.int64 and compact["dbytes"].dtype == np.int32
+    assert all(compact[column].dtype == "category" for column in ["proto", "service", "state", ATTACK_CAT])
+    # Es una tabla nueva: no comparte memoria con la leída.
+    for column in flows.columns:
+        if flows[column].dtype.kind in "if":
+            assert not np.shares_memory(compact[column].to_numpy(), flows[column].to_numpy()), column
+    assert compact_flows(flows).memory_usage(deep=True).sum() < flows.memory_usage(deep=True).sum()
+
+
+def test_analysis_finds_flows_by_id(mock, sample_flows):
+    analysis = run_analysis("x", sample_flows, mock, has_labels=True)
+    ids = sample_flows[ID_COL].tolist()
+    assert [analysis.position(flow_id) for flow_id in ids] == list(range(len(ids)))
+    for missing in (max(ids) + 1, -1, 2**63, -(2**63) - 1, 10**30):
+        assert analysis.position(missing) is None
+
+
+def test_batch_prediction_gives_the_same_results(real_client, sample_flows, monkeypatch):
+    # Por bloques de 64 flujos, como los de 10.000 con un archivo grande.
+    monkeypatch.setattr(predictors_module, "PREDICTION_BATCH_ROWS", 64)
+    for name, predictor in real_client.app.state.predictors.items():
+        whole = predict_flows(predictor.model, predictor.info, sample_flows)
+        batched = predictor.predict(sample_flows)
+        np.testing.assert_array_equal(batched[1], whole[1])
+        np.testing.assert_array_equal(batched[2], whole[2])
+        assert np.abs(batched[0] - whole[0]).max() <= PROBABILITY_NOISE, name
+        if name == "hist_gradient_boosting":
+            np.testing.assert_array_equal(batched[0], whole[0])
+
+
+@pytest.mark.parametrize("name", ["hist_gradient_boosting", "random_forest", "logistic_regression"])
+def test_compact_rows_explain_the_same(name, real_client, sample_flows):
+    predictor = real_client.app.state.predictors[name]
+    flows = messy_flows(sample_flows).infer_objects()
+    compact = compact_flows(flows)
+    for position in range(0, len(flows), 25):
+        assert predictor.explain(compact.iloc[position]) == predictor.explain(flows.iloc[position]), position

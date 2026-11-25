@@ -404,7 +404,7 @@ Todos los campos salen de `registry.json` y del `model.json` de cada modelo. La 
 
 ### Ejemplo de respuesta
 
-Mientras no haya modelos reales, el único modelo es el simulado:
+Con solo el modelo simulado, como en las pruebas de la app (sección 12):
 
 ```json
 {
@@ -421,6 +421,8 @@ Mientras no haya modelos reales, el único modelo es el simulado:
   ]
 }
 ```
+
+Con los modelos reales, la lista trae los modelos registrados y ninguno es simulado.
 
 ### Elegir el modelo por defecto
 
@@ -787,7 +789,7 @@ Si la detección y el tipo salen de un solo modelo multiclase, las dos claves ap
 
 ### Cómo deben estar hechos los pipelines
 
-- **Dos pasos con nombre fijo.** Cada `Pipeline` tiene exactamente dos pasos: `"preprocessor"`, el `ColumnTransformer` de `build_preprocessor` con el método de preprocesamiento del modelo, y `"model"`, el estimador. El detector y el clasificador de un modelo usan el **mismo** método de preprocesamiento, el que declara `preprocessing_method` en `model.json` (sección 11).
+- **Dos pasos con nombre fijo.** Cada `Pipeline` tiene exactamente dos pasos: `"preprocessor"`, el `ColumnTransformer` de `build_preprocessor` con el método de preprocesamiento del modelo, y `"model"`, el estimador. El detector y el clasificador de un modelo usan el **mismo** método de preprocesamiento, el que declara `preprocessing_method` en `model.json` (sección 11). Los dos preprocesadores se ajustan con todos los flujos de entrenamiento, también el del clasificador, aunque este aprenda solo con los ataques: así los dos conservan las mismas categorías.
 - **Llevan la preparación adentro.** Cada `Pipeline` recibe los flujos con sus columnas originales, tal como vienen en el archivo, y hace por dentro toda la preparación aprobada en el análisis exploratorio. Así la preparación del entrenamiento y la de la app son siempre la misma:
   - `log1p` a las variables asimétricas, con `FunctionTransformer(np.log1p)`.
   - Agrupación y one-hot de `CATEGORICAL_COLS`, con `OneHotEncoder(min_frequency=MIN_CATEGORY_FRACTION, handle_unknown="infrequent_if_exist", sparse_output=False)`. `MIN_CATEGORY_FRACTION` es `MIN_CATEGORY_COUNT / TRAIN_ROWS` (≈ 0,57 %): el mismo mínimo del análisis exploratorio, expresado como proporción. Así, al ajustar con la parte de entrenamiento, se conservan las mismas 18 categorías. Las categorías raras, las nuevas y las celdas vacías van a la misma columna "infrecuente" (`<variable>_infrequent_sklearn`).
@@ -823,7 +825,7 @@ Un modelo guardado con una versión de scikit-learn puede comportarse distinto, 
 
 - La app carga cada modelo registrado **una sola vez, al arrancar**, y lo mantiene en memoria.
 - **Si un modelo registrado no se puede cargar** (falta un archivo, está dañado o falta una librería), **la app no arranca** y muestra un error claro con el nombre del modelo y la causa. Así el problema se ve de inmediato y nunca hay una pantalla Modelos con datos a medias.
-- **`model.json` y `model.joblib` deben corresponder.** Al cargar se comprueba que el preprocesador de cada `Pipeline` usa exactamente las columnas de `numeric_cols` y `categorical_cols`. También se comprueba que existen las clases que se buscan por nombre: `1` o `"Normal"` en el detector, según `detector_type`, y los 9 tipos en el clasificador. Si algo no coincide, el modelo no se puede cargar.
+- **`model.json` y `model.joblib` deben corresponder.** Al cargar se comprueba que el preprocesador de cada `Pipeline` usa exactamente las columnas de `numeric_cols` y `categorical_cols`, y que los dos `Pipeline` dan las mismas columnas preparadas, que son exactamente las de `feature_groups`. También se comprueba que existen las clases que se buscan por nombre: `1` o `"Normal"` en el detector, según `detector_type`, y los 9 tipos en el clasificador. Si algo no coincide, el modelo no se puede cargar.
 - **`ml/` hace las mismas comprobaciones al exportar.** Así, un modelo exportado siempre se puede cargar.
 - La app **nunca entrena** ni modifica nada dentro de `artifacts/`.
 - **El modelo simulado no cuenta como un modelo que no se pudo cargar:** si `model.json` dice `is_mock: true`, la app no busca `model.joblib` y usa `mock.py` en su lugar (sección 13). Que falte su `model.joblib` es lo esperado, no un error.
@@ -887,7 +889,7 @@ La regla es la de `CLAUDE.md`: el umbral más alto que deja al menos el 95 % de 
 | Campo | Tipo | Puede ser `null` | Qué es |
 |---|---|---|---|
 | `can_explain` | booleano | No | Si el modelo puede explicar sus decisiones. Mismo nombre que en `GET /api/models` y `GET /api/explain/{id}`. |
-| `explanation_method` | texto | Sí | Método con que se calculan las contribuciones. Sirve para saber en qué escala están (sección 5). `null` si `can_explain` es `false`. Los valores posibles se definen junto con los modelos; en el ejemplo, `"pending_method"` es provisional. |
+| `explanation_method` | texto | Sí | Método con que se calculan las contribuciones. Sirve para saber en qué escala están (sección 5). `null` si `can_explain` es `false`. Valores posibles: `"shap_tree"` (SHAP `TreeExplainer`, en log-odds o en probabilidad según el modelo), `"linear_logit"` (coeficiente × valor preparado, en log-odds) y `"mock"`. |
 
 ### Métricas de prueba
 
@@ -913,7 +915,7 @@ Campos de `complexity`:
 | `training_flows` | entero | Flujos usados para entrenar. | Filas que recibió el `fit`. |
 | `prediction_ms_per_1000_flows` | número | Tiempo de predicción, en milisegundos por cada 1.000 flujos. | Se calculan `attack_probability` y el tipo para los 82.332 flujos de la prueba completa, con la preparación del `Pipeline` incluida. Se repite 5 veces y se toma la **mediana**; el resultado se divide entre 82,332. No incluye leer ni validar el CSV. |
 | `model_size_mb` | número | Tamaño de `model.joblib`, en MB. | Tamaño del archivo en disco, justo después de guardarlo, dividido entre 1.000.000. |
-| `hardware` | texto | Equipo donde se midió. | Procesador y número de núcleos, con `platform` y `os.cpu_count()`. Los tiempos solo se comparan entre modelos medidos en el mismo equipo. |
+| `hardware` | texto | Equipo donde se midió. | Procesador y número de núcleos lógicos. El nombre del procesador sale de "model name" en `/proc/cpuinfo`, porque en Linux `platform.processor()` puede dar un texto vacío (así pasa en WSL); si ese archivo no existe, se usa `platform.machine()`. Los núcleos salen de `os.cpu_count()`. Por ejemplo: "11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz, 16 núcleos lógicos". Los tiempos solo se comparan entre modelos medidos en el mismo equipo. |
 
 ### Ejemplo
 
@@ -978,7 +980,7 @@ Valores inventados, pero con las listas de variables reales que salen de las dec
     "validation_false_alarm_rate": 0.1387
   },
   "can_explain": true,
-  "explanation_method": "pending_method",
+  "explanation_method": "shap_tree",
   "test_metrics": {
     "test_flows": 82332,
     "detection": {
@@ -1052,12 +1054,13 @@ Cada modelo de `models` tiene por ahora un solo campo, `name`. Es un objeto y no
 - **Todo debe coincidir:** cada `name` registrado tiene su carpeta con `model.json` (y `model.joblib`, salvo el modelo simulado), y el `name` de ese `model.json` es el mismo. `default_model` es uno de los `name` de `models`.
 - **Si algo no coincide, la app no arranca:** muestra un error claro que dice qué falta o qué no coincide, igual que con un modelo que no se puede cargar (sección 10). Esto también aplica si falta `registry.json`.
 - **Modelos sin registrar:** una carpeta en `artifacts/models/` que no está en `models` se ignora. Así se puede guardar un modelo antes de su evaluación final sin que aparezca en la app.
-- **Registrar no cambia el modelo por defecto:** agregar un modelo a `models` no cambia `default_model`. Cambiarlo es una decisión del equipo. Un modelo nuevo se agrega al final de `models`, antes del simulado si está. Registrar un modelo que ya está registrado no cambia nada.
-- **Mientras no haya modelos reales:** el único modelo registrado es el simulado, y es el modelo por defecto.
+- **Registrar no cambia el modelo por defecto:** agregar un modelo a `models` no cambia `default_model`. Cambiarlo es una decisión del equipo y se hace con `set_default_model` de `ml/training.py`, que escribe `registry.json` de una sola vez, igual que `register_model`. Solo acepta un modelo registrado. Un modelo nuevo se agrega al final de `models`, antes del simulado si está. Registrar un modelo que ya está registrado no cambia nada.
+- **Quitar un modelo del registro:** `unregister_model` de `ml/training.py` lo saca de `models`. Su carpeta queda en `artifacts/models/` y la app la ignora. No se puede quitar el modelo por defecto.
+- **Con modelos reales, el simulado sale del registro.** Su carpeta (`artifacts/models/mock/`, solo con `model.json`) se conserva porque la usan las pruebas de la app, que arman su propio `registry.json` con solo el simulado.
 
 ### Ejemplos
 
-Mientras no haya modelos reales:
+Solo con el modelo simulado (el registro que arman las pruebas de la app):
 
 ```json
 {
@@ -1068,14 +1071,14 @@ Mientras no haya modelos reales:
 }
 ```
 
-Con un modelo real registrado (nombre de ejemplo). El simulado puede seguir en la lista o quitarse cuando el equipo lo decida:
+Con modelos reales (nombres de ejemplo):
 
 ```json
 {
   "default_model": "example_model",
   "models": [
     { "name": "example_model" },
-    { "name": "mock" }
+    { "name": "other_model" }
   ]
 }
 ```
@@ -1084,10 +1087,12 @@ Con un modelo real registrado (nombre de ejemplo). El simulado puede seguir en l
 
 Permite programar y probar la app completa antes de tener modelos reales. Responde con valores **inventados**, pero en el formato definitivo de este contrato, así que al llegar los modelos reales no hay que cambiar el frontend ni las rutas.
 
+Hoy no está registrado en la app: la app usa los modelos entrenados, y el simulado se conserva para las pruebas de la app. Los ejemplos de este documento que lo usan (como `sample-mock`) muestran el formato, no los modelos actuales.
+
 ### Cómo existe
 
 - **Carpeta:** `artifacts/models/mock/`, con solo `model.json` y **sin** `model.joblib` (sección 10).
-- **Registro:** está en `registry.json` y, mientras no haya modelos reales, es el único modelo y el modelo por defecto (sección 12).
+- **Registro:** estuvo en `registry.json` como único modelo y modelo por defecto mientras no hubo modelos reales. Con los modelos reales sale del registro; su carpeta se conserva para las pruebas de la app (sección 12).
 - **Nombre reservado:** `ml/` nunca exporta un modelo llamado `mock`. Los archivos del simulado se escriben a mano.
 - **Código:** las predicciones las calcula `app/mock.py`, no un `Pipeline`. La app lo usa porque `model.json` dice `is_mock: true`.
 - **En la interfaz:** `is_mock` llega en `GET /api/models` y en `GET /api/metrics`, y la interfaz debe advertir que los resultados son inventados mientras se use este modelo.

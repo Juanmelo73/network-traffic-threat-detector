@@ -111,8 +111,11 @@ export function setChosenModel(name) {
 // La muestra de demostración tiene analysis_id fijos (contrato, sección 2): sample-<modelo> con
 // etiquetas y sample-<modelo>-unlabeled sin ellas. Son los únicos ids que el frontend arma o interpreta.
 const SAMPLE_PREFIX = 'sample-';
+const UNLABELED_SUFFIX = '-unlabeled';
 export const isSampleAnalysis = (analysisId) => analysisId.startsWith(SAMPLE_PREFIX);
-export const sampleAnalysisId = (modelName, labeled) => SAMPLE_PREFIX + modelName + (labeled ? '' : '-unlabeled');
+export const sampleAnalysisId = (modelName, labeled) => SAMPLE_PREFIX + modelName + (labeled ? '' : UNLABELED_SUFFIX);
+// Si una muestra es con etiquetas (sample-<modelo>) o sin ellas (sample-<modelo>-unlabeled).
+export const isLabeledSample = (analysisId) => !analysisId.endsWith(UNLABELED_SUFFIX);
 
 // Si un modelo es simulado: true o false según GET /api/models, o null si no aparece en la lista
 // (por ejemplo, un enlace viejo a un modelo que se quitó del registro). Con null no se supone nada.
@@ -210,10 +213,24 @@ export function formatSigned(x) {
   return (x >= 0 ? '+' : '−') + formatDecimal(Math.abs(x));
 }
 
-// Valor de una variable de un flujo, tal como vino en el archivo.
-export function formatValue(v) {
+// Valores que la interfaz muestra con otro texto. Es solo presentación: el archivo, la API y los
+// modelos siguen usando el valor original. "unas" es lo que Argus escribe cuando el número de
+// protocolo IP no tiene nombre en su tabla (openargus/clients, common/argus_util.c, ArgusPrintProto).
+const DISPLAY_VALUES = { proto: { unas: 'unassigned' } };
+
+const displayText = (v, feature) => DISPLAY_VALUES[feature]?.[v];
+
+// Valor de una variable de un flujo como se muestra. Sin feature, o si el valor no tiene otro
+// texto en DISPLAY_VALUES, se muestra tal como vino en el archivo.
+export function formatValue(v, feature) {
   if (v === null || v === undefined) return 'vacío';
-  return typeof v === 'number' ? valueFormat.format(v) : String(v);
+  if (typeof v === 'number') return valueFormat.format(v);
+  return displayText(v, feature) ?? String(v);
+}
+
+// Texto al pasar el mouse cuando formatValue cambió el valor; null (sin title) si no lo cambió.
+export function valueTitle(v, feature) {
+  return typeof v === 'string' && displayText(v, feature) !== undefined ? 'Valor en el archivo: ' + v : null;
 }
 
 // ---------- Construcción de la página ----------
@@ -393,9 +410,11 @@ export function initHeader(models) {
   const model = getChosenModel(models);
   const pill = document.getElementById('modelPill');
   if (pill && model) {
+    // replaceChildren, a diferencia de h(), escribiría un null como el texto "null": la etiqueta
+    // "Simulado" se agrega solo si hace falta.
     pill.replaceChildren(h('span', { class: 'pill-k' }, 'Modelo en uso:'),
       h('span', { class: 'pill-v' }, model.display_name),
-      model.is_mock ? h('span', { class: 'tag tag-mock' }, icon('flask-conical', { size: 'sm' }), 'Simulado') : null);
+      ...(model.is_mock ? [h('span', { class: 'tag tag-mock' }, icon('flask-conical', { size: 'sm' }), 'Simulado')] : []));
     pill.hidden = false;
   }
   return model;
@@ -474,7 +493,8 @@ function flowSummary(flow, hasLabels, threshold) {
         threshold === null || threshold === undefined ? null : h('span', {}, 'Umbral del modelo: ' + formatDecimal(threshold)))),
     h('dl', { class: 'kv' },
       h('dt', {}, 'ID'), h('dd', { class: 'mono' }, String(flow.id)),
-      h('dt', {}, featureName('proto')), h('dd', { class: 'mono' }, formatValue(flow.proto)),
+      h('dt', {}, featureName('proto')),
+      h('dd', { class: 'mono', title: valueTitle(flow.proto, 'proto') }, formatValue(flow.proto, 'proto')),
       h('dt', {}, featureName('service')), h('dd', { class: 'mono' }, formatValue(flow.service)),
       h('dt', {}, featureName('state')), h('dd', { class: 'mono' }, formatValue(flow.state)),
       h('dt', {}, 'Tipo probable'), h('dd', {}, flow.predicted_attack_cat ? attackType(flow.predicted_attack_cat) : '—'),
@@ -496,7 +516,8 @@ function explanation(explained) {
   const item = (c) => {
     const dir = c.contribution >= 0 ? 'pos' : 'neg';
     return h('li', { class: 'expl-item' },
-      h('div', { class: 'expl-name' }, featureName(c.feature), h('span', { class: 'val' }, formatValue(c.value))),
+      h('div', { class: 'expl-name' }, featureName(c.feature),
+        h('span', { class: 'val', title: valueTitle(c.value, c.feature) }, formatValue(c.value, c.feature))),
       h('div', { class: 'expl-bar', 'aria-hidden': 'true' },
         h('span', { class: dir, style: 'width:' + ((Math.abs(c.contribution) / maxAbs) * 50).toFixed(1) + '%' })),
       h('div', { class: 'expl-c ' + dir }, formatSigned(c.contribution)));
