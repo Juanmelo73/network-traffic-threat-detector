@@ -19,6 +19,9 @@ TEST_ROWS = 82_332
 ARTIFACTS_DIR = ROOT / "artifacts"
 MODELS_DIR = ARTIFACTS_DIR / "models"
 FIGURES_DIR = ARTIFACTS_DIR / "figures"
+# Figuras para el artículo en inglés y en español (notebook 07), a 300 ppp; las originales no cambian.
+PAPER_FIGURES_DIR = ARTIFACTS_DIR / "paper_figures"
+PAPER_FIGURE_LANGUAGES = ("en", "es")
 # Resultados de la búsqueda de modelos en validación: una fila por candidato (ml/training.py).
 MODEL_SEARCH_DIR = ARTIFACTS_DIR / "model_search"
 MODEL_SEARCH_CSV = MODEL_SEARCH_DIR / "search_results.csv"
