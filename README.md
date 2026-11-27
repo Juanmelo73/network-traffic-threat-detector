@@ -4,6 +4,8 @@ Sistema de detección de intrusiones de red (IDS) con *machine learning*, entren
 
 Proyecto académico de la Especialización en Inteligencia Artificial de la Universidad Autónoma de Occidente.
 
+La aplicación está desplegada y se puede acceder en **https://network-traffic-threat-detector.onrender.com**.
+
 ## Qué hace
 
 Para cada flujo de un archivo CSV, el sistema calcula:
