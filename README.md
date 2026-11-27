@@ -26,10 +26,16 @@ network-traffic-threat-detector/
 │   ├── ml/                   Preparación de datos, umbral, métricas y exportación de modelos
 │   └── app/                  Aplicación web: API con FastAPI y, en static/, los archivos de la interfaz
 ├── data/                     Dataset: los CSV no están en el repositorio (ver data/README.md)
-├── notebooks/                Exploración de los datos y pruebas de cada parte del código
-├── artifacts/                Modelos exportados, registro de modelos y figuras
+├── notebooks/                Exploración de los datos, pruebas de cada parte, entrenamiento de los modelos y figuras
+├── artifacts/
+│   ├── registry.json         Registro de los modelos que carga la aplicación
+│   ├── models/               Los modelos exportados (un model.joblib y un model.json por modelo)
+│   ├── figures/              Figuras del análisis exploratorio
+│   ├── model_search/         Resultados de la búsqueda, del entrenamiento final y de la evaluación en prueba
+│   └── paper_figures/        Figuras del artículo, en inglés (en/) y en español (es/)
 ├── docs/contracts.md         Contratos entre las partes: API web y formato de los modelos exportados
 ├── docs/design/              Guía de diseño de la interfaz: colores, tipografía, componentes e íconos
+├── docs/papers/              El artículo del proyecto, en inglés y en español
 ├── pyproject.toml, uv.lock   Definición del proyecto y versiones exactas de las dependencias
 ├── requirements-prod.txt     Dependencias de la aplicación
 └── requirements.txt          Dependencias de desarrollo (incluye las de la aplicación)
@@ -45,7 +51,8 @@ Los datos pasan por las partes en este orden: `data/raw/` → `ml/` → `artifac
 | `03_preprocessing.ipynb` | Validación de flujos y los tres métodos de preprocesamiento |
 | `04_threshold_and_artifacts.ipynb` | Umbral de alerta, severidad, métricas y formato de los modelos exportados |
 | `05_models.ipynb` | Búsqueda de modelos en validación: barrido de las familias con sus valores por defecto, búsqueda de hiperparámetros y tablas para el artículo, en `artifacts/model_search/` |
-| `06_final_training.ipynb` | Entrenamiento final: entrena los modelos elegidos y los de referencia, los evalúa una sola vez en la partición de prueba y registra en la app los 4 modelos |
+| `06_final_training.ipynb` | Entrenamiento final: entrena los modelos elegidos y los de referencia, los evalúa una sola vez en la partición de prueba y registra en la app los 4 modelos. También tiene los análisis para el artículo: falsas alarmas, importancia de las variables, figuras de resultados y el resumen `final_results.json` |
+| `07_paper_figures.ipynb` | Figuras del artículo en inglés y en español, en `artifacts/paper_figures/` |
 
 ## Instalación
 
@@ -92,7 +99,12 @@ Métricas en la partición oficial de prueba (82.332 flujos), usada una sola vez
 - El F1 macro de tipos se mide sobre los ataques reales que dieron alerta.
 - HistGradientBoosting, Random Forest y la regresión logística explican cada decisión con la contribución de cada variable; la red neuronal no.
 
-La búsqueda de modelos está en `notebooks/05_models.ipynb`; el entrenamiento final, la evaluación en prueba y el registro, en `notebooks/06_final_training.ipynb`. Los resultados completos, con las tablas y figuras para el artículo, están en `artifacts/model_search/` (ver su `README.md`).
+Otros resultados:
+
+- **Variables de TTL.** En los dos modelos de árboles, la variable más importante es el TTL del origen (`sttl`): el 43,7 % de la importancia total en HistGradientBoosting y el 20,3 % en Random Forest. Las variables de TTL son un atajo conocido de UNSW-NB15, así que los 3 modelos elegidos se entrenaron también sin ellas (método M3), con los mismos hiperparámetros, para medir cuánto dependen de ese atajo.
+- **Sin selección de variables.** No se usó selección de variables ni reducción de dimensionalidad: la aplicación explica cada decisión con las variables originales, y combinarlas (por ejemplo, con PCA) haría perder esa explicación. Las variables que no se usan se quitaron antes, en el análisis exploratorio, por razones de los datos.
+
+La búsqueda de modelos está en `notebooks/05_models.ipynb`; el entrenamiento final, la evaluación en prueba, el registro y los análisis para el artículo, en `notebooks/06_final_training.ipynb`. Los resultados completos están en `artifacts/model_search/`, con un resumen en `final_results.json` (ver su `README.md`), y las figuras del artículo en inglés y en español, en `artifacts/paper_figures/`.
 
 ## Arrancar la aplicación
 
@@ -115,11 +127,12 @@ Terminado:
 3. **Conjuntos de datos:** separación de entrenamiento y validación (80 % / 20 %, por grupos de flujos idénticos y estratificada por tipo de ataque) y muestra de demostración.
 4. **Preprocesamiento:** validación de los flujos y tres métodos de preparación: M1 sin escalar, M2 con estandarización y M3 sin las variables de TTL.
 5. **Umbral y métricas:** umbral de alerta calculado con la validación (detección mínima del 95 %), severidad y métricas de evaluación.
-6. **Artefactos:** exportación, registro y carga de los modelos, y un modelo simulado que permite programar la aplicación antes de tener modelos reales.
+6. **Artefactos:** exportación, registro y carga de los modelos, y un modelo simulado que permitió programar la aplicación antes de tener modelos reales; hoy solo lo usan las pruebas.
 7. **Pruebas automatizadas** con pytest (`uv run pytest`).
 8. **Backend:** API con FastAPI que analiza archivos CSV, explica la decisión sobre cada flujo, entrega los modelos y sus métricas, y reproduce un análisis flujo por flujo.
 9. **Frontend:** consola, simulación con animación y comparación de modelos, en HTML, CSS y JavaScript sin frameworks, en modo claro y oscuro.
 10. **Modelos:** búsqueda en validación de 8 familias de modelos y sus hiperparámetros, entrenamiento final, evaluación en la partición de prueba y registro de los 4 modelos de la aplicación (ver [Modelos](#modelos)).
+11. **Materiales para el artículo:** análisis de las falsas alarmas, importancia de las variables, figuras de resultados, resumen de los resultados finales y figuras en inglés y en español. El artículo, en las dos versiones, va en `docs/papers/`.
 
 ## Autores
 
